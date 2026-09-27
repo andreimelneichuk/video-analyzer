@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Skycoach Reels Ad Analyzer</title>
+  <!-- Tailwind CSS & DaisyUI -->
+  <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            skycoach: {
+              navy: '#0f172a',
+              card: '#1e293b',
+              accent: '#f97316',
+              blue: '#0284c7',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    .glass-panel {
+      background: rgba(30, 41, 59, 0.7);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Navbar -->
+  <header class="navbar glass-panel sticky top-0 z-50 px-6 py-3 border-b border-slate-800">
+    <div class="flex-1 flex items-center gap-3">
+      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20 text-white font-bold text-xl">
+        S
+      </div>
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
+          Skycoach <span class="text-orange-500">Reels</span> Analyzer
+        </h1>
+        <p class="text-xs text-slate-400">Автоматическая оценка рекламных интеграций в Instagram Reels</p>
+      </div>
+    </div>
+    <div class="flex-none flex items-center gap-3">
+      <a href="/api/export/csv" class="btn btn-sm btn-outline btn-warning gap-2" title="Скачать CSV отчет">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+        Экспорт в CSV
+      </a>
+      <a href="/docs" target="_blank" class="btn btn-sm btn-ghost text-slate-300">
+        Swagger API
+      </a>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+
+    <!-- Input Card -->
+    <div class="card glass-panel shadow-2xl rounded-2xl p-6">
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 mb-4">
+        <div>
+          <h2 class="text-lg font-semibold text-white">Пакетный ввод ссылок</h2>
+          <p class="text-sm text-slate-400">Введите до 20 ссылок на Instagram Reels или YouTube Shorts (каждая с новой строки)</p>
+        </div>
+        <div class="badge badge-lg badge-neutral font-mono font-medium text-slate-300">
+          Ссылок: <span id="urlCount" class="text-orange-400 font-bold ml-1 mr-1">0</span> / 20
+        </div>
+      </div>
+
+      <textarea
+        id="urlsInput"
+        rows="5"
+        class="textarea textarea-bordered w-full font-mono text-sm bg-slate-900/90 border-slate-700 text-slate-200 focus:border-orange-500 focus:outline-none transition"
+        placeholder="https://www.instagram.com/reel/DceO7gsR0w-/&#10;https://www.instagram.com/reel/Dcdl9dgSEHd/&#10;https://www.instagram.com/reel/Dcf7D7wxU_O/"
+      ></textarea>
+
+      <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
+        <div class="flex items-center gap-2">
+          <button id="btnLoadExamples" type="button" class="btn btn-sm btn-neutral text-slate-300 hover:text-white border-slate-700">
+            📋 Загрузить примеры из ТЗ
+          </button>
+          <button id="btnClear" type="button" class="btn btn-sm btn-ghost text-slate-400 hover:text-white">
+            🧹 Очистить
+          </button>
+        </div>
+        <button id="btnSubmit" type="button" class="btn btn-primary bg-orange-600 hover:bg-orange-500 border-none text-white px-6 shadow-lg shadow-orange-600/30">
+          <span id="btnSubmitSpinner" class="loading loading-spinner loading-sm hidden"></span>
+          🚀 Запустить анализ
+        </button>
+      </div>
+    </div>
+
+    <!-- Active Tasks Progress Bar (Hidden by default) -->
+    <div id="progressAlert" class="alert alert-info bg-sky-950/80 border-sky-800 text-sky-200 hidden shadow-lg">
+      <span class="loading loading-spinner loading-md text-sky-400"></span>
+      <div class="flex-1">
+        <h3 class="font-bold">Идет обработка роликов в фоновом воркере...</h3>
+        <div class="text-xs text-sky-300/80" id="progressStatusText">Ожидание завершения задач</div>
+      </div>
+    </div>
+
+    <!-- Results Table Card -->
+    <div class="card glass-panel shadow-2xl rounded-2xl overflow-hidden border border-slate-800">
+      <div class="p-5 border-b border-slate-800 flex items-center justify-between">
+        <h3 class="font-bold text-lg text-white">Результаты анализа интеграций</h3>
+        <button id="btnRefresh" class="btn btn-sm btn-ghost text-slate-400 hover:text-white">
+          🔄 Обновить список
+        </button>
+      </div>
+
+      <div class="overflow-x-auto">
+        <table class="table table-zebra w-full text-sm">
+          <thead class="bg-slate-900/90 text-slate-400 uppercase text-xs tracking-wider">
+            <tr>
+              <th class="py-3 px-4">Ролик & Автор</th>
+              <th>Метрики</th>
+              <th>Класс</th>
+              <th>Заметность</th>
+              <th>Штраф & Выплата</th>
+              <th>Статус</th>
+              <th class="text-right">Детали</th>
+            </tr>
+          </thead>
+          <tbody id="resultsTableBody">
+            <tr id="emptyRow">
+              <td colspan="7" class="text-center py-12 text-slate-500">
+                <div class="max-w-xs mx-auto space-y-2">
+                  <div class="text-3xl">🎯</div>
+                  <p class="font-medium text-slate-400">Нет обработанных роликов</p>
+                  <p class="text-xs text-slate-600">Вставьте ссылки в поле выше и нажмите «Запустить анализ»</p>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal for Full Details -->
+  <dialog id="detailModal" class="modal modal-bottom sm:modal-middle">
+    <div class="modal-box bg-slate-900 border border-slate-800 text-slate-100 max-w-2xl">
+      <h3 class="font-bold text-lg flex items-center gap-2" id="modalTitle">
+        Анализ интеграции Skycoach
+      </h3>
+      <div class="py-4 space-y-4" id="modalBody">
+        <!-- Injected via JS -->
+      </div>
+      <div class="modal-action">
+        <form method="dialog">
+          <button class="btn btn-sm btn-neutral">Закрыть</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Script -->
+  <script>
+    const urlsInput = document.getElementById('urlsInput');
+    const urlCount = document.getElementById('urlCount');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const btnSubmitSpinner = document.getElementById('btnSubmitSpinner');
+    const btnLoadExamples = document.getElementById('btnLoadExamples');
+    const btnClear = document.getElementById('btnClear');
+    const btnRefresh = document.getElementById('btnRefresh');
+    const resultsTableBody = document.getElementById('resultsTableBody');
+    const emptyRow = document.getElementById('emptyRow');
+    const progressAlert = document.getElementById('progressAlert');
+    const progressStatusText = document.getElementById('progressStatusText');
+    const detailModal = document.getElementById('detailModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalBody');
+
+    let activePollingIds = new Set();
+    let pollingInterval = null;
+    let taskCache = new Map();
+
+    // Sample URLs from banner_review_examples.pdf and test task edge cases
+    const SAMPLE_URLS = [
+      "https://www.instagram.com/reel/DceO7gsR0w-/", // Good: Full payout (Valorant Funzone)
+      "https://www.instagram.com/reel/Dcdl9dgSEHd/", // Cut off left side (-20%)
+      "https://www.instagram.com/reel/DbQGs9HMcOQ/", // Banner too small (-30%)
+      "https://www.youtube.com/shorts/L3wbACRc_v0",  // YouTube Shorts good payout
+      "https://www.instagram.com/reel/private_reel_sample/", // Edge case: Private account
+      "https://invalid-url-domain.com/not-a-reel"     // Edge case: Invalid link
+    ];
+
+    // Update URL line counter
+    function updateLineCount() {
+      const lines = urlsInput.value.split('\n').map(l => l.trim()).filter(Boolean);
+      urlCount.textContent = lines.length;
+      if (lines.length > 20) {
+        urlCount.classList.add('text-error');
+      } else {
+        urlCount.classList.remove('text-error');
+      }
+    }
+
+    urlsInput.addEventListener('input', updateLineCount);
+
+    btnLoadExamples.addEventListener('click', () => {
+      urlsInput.value = SAMPLE_URLS.join('\n');
+      updateLineCount();
+    });
+
+    btnClear.addEventListener('click', () => {
+      urlsInput.value = '';
+      updateLineCount();
+    });
+
+    btnRefresh.addEventListener('click', () => {
+      loadRecentTasks();
+    });
+
+    // Submit batch tasks
+    btnSubmit.addEventListener('click', async () => {
+      const urls = urlsInput.value.split('\n').map(l => l.trim()).filter(Boolean);
+      if (urls.length === 0) {
+        alert('Пожалуйста, введите хотя бы одну ссылку.');
+        return;
+      }
+      if (urls.length > 20) {
+        alert('Максимальное количество ссылок — 20.');
+        return;
+      }
+
+      btnSubmit.disabled = true;
+      btnSubmitSpinner.classList.remove('hidden');
+
+      try {
+        const response = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ urls })
+        });
+
+        if (!response.ok) {
+          const err = await response.json();
+          alert('Ошибка: ' + (err.detail || 'Не удалось создать задачи'));
+          return;
+        }
+
+        const data = await response.json();
+        
+        // Add tasks to table and track in-flight ones
+        data.tasks.forEach(task => {
+          taskCache.set(task.id, task);
+          if (['PENDING', 'DOWNLOADING', 'ANALYZING'].includes(task.status)) {
+            activePollingIds.add(task.id);
+          }
+        });
+
+        renderTasks();
+        startPolling();
+
+      } catch (e) {
+        console.error(e);
+        alert('Сетевая ошибка при отправке запроса.');
+      } finally {
+        btnSubmit.disabled = false;
+        btnSubmitSpinner.classList.add('hidden');
+      }
+    });
+
+    // Start live polling every 2 seconds
+    function startPolling() {
+      if (activePollingIds.size === 0) {
+        stopPolling();
+        return;
+      }
+
+      progressAlert.classList.remove('hidden');
+      progressStatusText.textContent = `В процессе обработки: ${activePollingIds.size} роликов...`;
+
+      if (!pollingInterval) {
+        pollingInterval = setInterval(pollActiveTasks, 2000);
+      }
+    }
+
+    function stopPolling() {
+      if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+      }
+      progressAlert.classList.add('hidden');
+    }
+
+    async function pollActiveTasks() {
+      if (activePollingIds.size === 0) {
+        stopPolling();
+        return;
+      }
+
+      const idsQuery = Array.from(activePollingIds).join(',');
+      try {
+        const res = await fetch(`/api/tasks?ids=${idsQuery}`);
+        if (!res.ok) return;
+
+        const tasks = await res.json();
+        tasks.forEach(task => {
+          taskCache.set(task.id, task);
+          if (task.status === 'COMPLETED' || task.status === 'FAILED') {
+            activePollingIds.delete(task.id);
+          }
+        });
+
+        renderTasks();
+
+        if (activePollingIds.size === 0) {
+          stopPolling();
+        } else {
+          progressStatusText.textContent = `В процессе обработки: ${activePollingIds.size} роликов...`;
+        }
+      } catch (e) {
+        console.error('Polling error:', e);
+      }
+    }
+
+    // Load recent tasks on page load
+    async function loadRecentTasks() {
+      try {
+        const res = await fetch('/api/tasks?limit=30');
+        if (!res.ok) return;
+        const tasks = await res.json();
+        tasks.forEach(t => taskCache.set(t.id, t));
+        renderTasks();
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    // Render table
+    function renderTasks() {
+      const tasks = Array.from(taskCache.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+
+      if (tasks.length === 0) {
+        resultsTableBody.innerHTML = '';
+        resultsTableBody.appendChild(emptyRow);
+        return;
+      }
+
+      resultsTableBody.innerHTML = '';
+
+      tasks.forEach(task => {
+        const tr = document.createElement('tr');
+        tr.className = 'hover:bg-slate-900/60 transition border-b border-slate-800/80';
+
+        // 1. Reel & Author
+        const author = task.metrics?.author || '—';
+        const date = task.metrics?.upload_date || '—';
+        const shortUrl = task.canonical_url.replace('https://www.instagram.com/reel/', '').replace('https://www.youtube.com/shorts/', 'yt:');
+
+        // 2. Metrics (strictly null-safe!)
+        const fmtMetric = (val) => val !== null && val !== undefined ? Number(val).toLocaleString() : '<span class="badge badge-sm badge-ghost text-slate-500 font-mono">N/A</span>';
+        const views = fmtMetric(task.metrics?.views);
+        const likes = fmtMetric(task.metrics?.likes);
+        const comments = fmtMetric(task.metrics?.comments);
+
+        // 3. Class Badge
+        let classBadge = '<span class="badge badge-sm badge-ghost text-slate-500">Ожидание</span>';
+        if (task.analysis) {
+          const c = task.analysis.integration_class;
+          if (c === 0) classBadge = '<span class="badge badge-sm bg-slate-700 text-slate-300 border-none font-medium">0: Нет рекламы</span>';
+          else if (c === 1) classBadge = '<span class="badge badge-sm bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 font-medium">1: Упоминание</span>';
+          else if (c === 2) classBadge = '<span class="badge badge-sm bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">2: Продукт Skycoach</span>';
+        }
+
+        // 4. Prominence score
+        let prominenceHtml = '<span class="text-slate-500 text-xs">—</span>';
+        if (task.analysis) {
+          const score = task.analysis.prominence_score;
+          const stars = '⭐'.repeat(score);
+          const dur = task.analysis.banner_duration_seconds;
+          const area = task.analysis.screen_percentage;
+          prominenceHtml = `
+            <div class="font-medium text-amber-400 text-xs flex items-center gap-1">${stars} <span class="text-slate-300">(${score}/5)</span></div>
+            <div class="text-[11px] text-slate-400 font-mono mt-0.5">${dur.toFixed(1)}с · ${area.toFixed(1)}% кадра</div>
+          `;
+        }
+
+        // 5. Payout verdict & deduction
+        let payoutHtml = '<span class="text-slate-500 text-xs">—</span>';
+        if (task.analysis) {
+          const ded = task.analysis.deduction_percent;
+          if (ded === 0) {
+            payoutHtml = '<span class="badge badge-sm bg-emerald-950 text-emerald-300 border-emerald-700 font-medium">100% Оплата</span>';
+          } else if (ded >= 100) {
+            payoutHtml = '<span class="badge badge-sm bg-rose-950 text-rose-300 border-rose-700 font-medium">0% Исключен</span>';
+          } else {
+            payoutHtml = `<span class="badge badge-sm bg-amber-950 text-amber-300 border-amber-700 font-medium">-${ded}% Штраф</span>`;
+          }
+        }
+
+        // 6. Status badge
+        let statusBadge = '';
+        if (task.status === 'PENDING') statusBadge = '<span class="badge badge-sm badge-neutral animate-pulse text-slate-400">В очереди</span>';
+        else if (task.status === 'DOWNLOADING') statusBadge = '<span class="badge badge-sm bg-sky-900/60 text-sky-300 border-sky-700 flex items-center gap-1"><span class="loading loading-spinner loading-xs"></span> Скачивание</span>';
+        else if (task.status === 'ANALYZING') statusBadge = '<span class="badge badge-sm bg-purple-900/60 text-purple-300 border-purple-700 flex items-center gap-1"><span class="loading loading-spinner loading-xs"></span> AI Анализ</span>';
+        else if (task.status === 'COMPLETED') statusBadge = task.is_cached ? '<span class="badge badge-sm bg-emerald-950 text-emerald-400 border-emerald-700">Кэш</span>' : '<span class="badge badge-sm bg-emerald-900/60 text-emerald-300 border-emerald-700">Готово</span>';
+        else if (task.status === 'FAILED') statusBadge = '<span class="badge badge-sm bg-rose-950 text-rose-400 border-rose-700" title="' + (task.error_message || '') + '">Ошибка</span>';
+
+        tr.innerHTML = `
+          <td class="py-3 px-4">
+            <a href="${task.canonical_url}" target="_blank" class="font-mono text-xs text-orange-400 hover:underline flex items-center gap-1">
+              ${shortUrl}
+              <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 inline text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+            <div class="text-xs text-slate-400 mt-0.5">@${author} · <span class="text-slate-500">${date}</span></div>
+          </td>
+          <td>
+            <div class="text-xs space-y-0.5">
+              <div>👁️ ${views}</div>
+              <div>❤️ ${likes} · 💬 ${comments}</div>
+            </div>
+          </td>
+          <td>${classBadge}</td>
+          <td>${prominenceHtml}</td>
+          <td>${payoutHtml}</td>
+          <td>${statusBadge}</td>
+          <td class="text-right">
+            <button class="btn btn-xs btn-outline btn-neutral text-slate-300 hover:text-white" onclick="openTaskModal('${task.id}')">
+              Инфо
+            </button>
+          </td>
+        `;
+
+        resultsTableBody.appendChild(tr);
+      });
+    }
+
+    // Modal popup
+    window.openTaskModal = function(taskId) {
+      const task = taskCache.get(taskId);
+      if (!task) return;
+
+      modalTitle.innerHTML = `Карточка задачи <span class="text-xs font-mono text-slate-400">#${task.id.slice(0, 8)}</span>`;
+      
+      let analysisHtml = '';
+      if (task.analysis) {
+        const defectsList = task.analysis.defects && task.analysis.defects.length > 0 
+          ? task.analysis.defects.map(d => `<span class="badge badge-error badge-sm text-xs">${d}</span>`).join(' ')
+          : '<span class="text-emerald-400 text-xs font-medium">Дефектов размещения не обнаружено</span>';
+
+        analysisHtml = `
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div><span class="text-slate-400">Класс интеграции:</span> <strong class="text-white">${task.analysis.integration_class}</strong></div>
+              <div><span class="text-slate-400">Заметность:</span> <strong class="text-amber-400">${task.analysis.prominence_score}/5</strong></div>
+              <div><span class="text-slate-400">Хронометраж баннера:</span> <strong>${task.analysis.banner_duration_seconds.toFixed(1)} сек</strong></div>
+              <div><span class="text-slate-400">Доля экрана:</span> <strong>${task.analysis.screen_percentage.toFixed(1)}%</strong></div>
+              <div><span class="text-slate-400">Голосовой CTA:</span> <strong>${task.analysis.has_voice_cta ? 'Да' : 'Нет'}</strong></div>
+              <div><span class="text-slate-400">Текстовый CTA:</span> <strong>${task.analysis.has_text_cta ? 'Да' : 'Нет'}</strong></div>
+              <div><span class="text-slate-400">Промокод:</span> <strong class="text-orange-400">${task.analysis.promo_code || '—'}</strong></div>
+              <div><span class="text-slate-400">Вердикт выплат:</span> <strong class="text-emerald-400">${task.analysis.payout_recommendation}</strong></div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800">
+              <span class="text-xs text-slate-400 block mb-1">Дефекты по регламенту Skycoach:</span>
+              <div class="flex flex-wrap gap-1">${defectsList}</div>
+            </div>
+
+            <div class="pt-2 border-t border-slate-800">
+              <span class="text-xs text-slate-400 block mb-1">Подробное обоснование AI:</span>
+              <p class="text-xs text-slate-200 leading-relaxed bg-slate-900 p-2.5 rounded-lg border border-slate-800 font-sans">${task.analysis.reasoning}</p>
+            </div>
+          </div>
+        `;
+      } else if (task.status === 'FAILED') {
+        analysisHtml = `
+          <div class="alert alert-error bg-rose-950/70 border-rose-800 text-rose-200 text-xs">
+            <strong>Причина ошибки:</strong> ${task.error_message || 'Не удалось обработать ролик'}
+          </div>
+        `;
+      } else {
+        analysisHtml = `
+          <div class="text-center py-6 text-slate-500 text-xs">
+            Ролик находится в процессе обработки (${task.status})...
+          </div>
+        `;
+      }
+
+      modalBody.innerHTML = `
+        <div class="space-y-3">
+          <div class="text-xs font-mono bg-slate-950 p-2 rounded border border-slate-800 truncate">
+            <span class="text-slate-400">URL:</span> <a href="${task.canonical_url}" target="_blank" class="text-orange-400 hover:underline">${task.canonical_url}</a>
+          </div>
+          ${analysisHtml}
+        </div>
+      `;
+
+      detailModal.showModal();
+    }
+
+    // Initial load
+    loadRecentTasks();
+  </script>
+</body>
+</html>

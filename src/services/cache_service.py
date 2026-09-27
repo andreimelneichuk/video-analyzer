@@ -33,9 +33,7 @@ class TaskCacheService:
         return result.scalar_one_or_none()
 
     @staticmethod
-    async def find_active_in_flight_task(
-        session: AsyncSession, canonical_url: str
-    ) -> Task | None:
+    async def find_active_in_flight_task(session: AsyncSession, canonical_url: str) -> Task | None:
         """
         Finds an active task currently in progress for the canonical URL to prevent
         duplicate concurrent worker jobs.
