@@ -19,8 +19,19 @@ SKYCOACH_SYSTEM_PROMPT = """
 - 'overlapped_by_ui': Баннер расположен слишком низко или близко к элементам интерфейса Reels/Shorts (перекрыт кнопками лайка/комментариев справа, плашкой описания автора снизу или вырезом фронтальной камеры смартфона).
 - 'not_visible': Баннер полностью перекрыт геймплеем/интерфейсом или фактически невидим.
 
-ОТВЕТ:
-Верни строго структурированный JSON в соответствии с переданной JSON-схемой.
+СТРОГАЯ СХЕМА ОТВЕТА (JSON):
+Отвечай СТРОГО в формате валидного JSON со следующими обязательными полями:
+{
+  "has_skycoach_mention": true/false,
+  "is_product_advertised": true/false,
+  "banner_duration_seconds": float,
+  "screen_percentage": float,
+  "has_voice_cta": true/false,
+  "has_text_cta": true/false,
+  "promo_code": "КОД" или null,
+  "observed_defects": ["cut_off_edge", "too_small", "overlapped_by_ui", "not_visible"],
+  "visual_observations": "краткое описание расположения баннера и игры"
+}
 """
 
 SKYCOACH_USER_PROMPT = """
