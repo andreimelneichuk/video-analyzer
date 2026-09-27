@@ -63,6 +63,16 @@ class VlmClient:
         logger.info("Uploading video to Gemini Files API: %s", video_path)
         video_file = client.files.upload(file=video_path)
 
+        # Wait until the video finishes processing on Google's servers
+        import asyncio
+
+        while video_file.state == types.FileState.PROCESSING:
+            await asyncio.sleep(2)
+            video_file = client.files.get(name=video_file.name)
+
+        if video_file.state == types.FileState.FAILED:
+            raise RuntimeError(f"Gemini video processing failed: {video_file.error}")
+
         prompt_text = SKYCOACH_USER_PROMPT
         if not has_audio:
             prompt_text += "\nВНИМАНИЕ: Видеоролик без звуковой дорожки, голосовой CTA отсутствует."
