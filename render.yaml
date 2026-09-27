@@ -1,0 +1,49 @@
+services:
+  - type: web
+    name: skycoach-reels-analyzer
+    env: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////app/data/skycoach.db
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: skycoach-redis
+          property: connectionString
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+  - type: worker
+    name: skycoach-worker
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerCommand: rq worker skycoach_reels --url $REDIS_URL
+    plan: starter
+    envVars:
+      - key: DATABASE_URL
+        value: sqlite+aiosqlite:////app/data/skycoach.db
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: skycoach-redis
+          property: connectionString
+      - key: AI_PROVIDER
+        value: gemini
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+
+  - type: redis
+    name: skycoach-redis
+    ipAllowList: []
+    plan: starter
