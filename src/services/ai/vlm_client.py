@@ -14,15 +14,16 @@ logger = logging.getLogger(__name__)
 
 class VlmClient:
     """
-    Multimodal VLM client supporting Gemini 2.5 Flash (via Google GenAI)
-    and OpenRouter (Qwen Omni / GPT-4o-mini via OpenAI SDK).
+    Multimodal VLM client supporting Qwen Omni / Qwen3.8-Omni-Flash via OpenRouter
+    (primary per ARCHITECTURE.md) and Google Gemini 2.5 Flash as secondary.
     Includes offline mock capability for test environments and CI.
     """
 
     def __init__(self):
         self.provider = settings.AI_PROVIDER
-        self.gemini_key = settings.GEMINI_API_KEY
         self.openrouter_key = settings.OPENROUTER_API_KEY
+        self.openrouter_model = settings.OPENROUTER_MODEL
+        self.gemini_key = settings.GEMINI_API_KEY
 
     async def analyze_video(
         self,
@@ -37,17 +38,23 @@ class VlmClient:
         if override_observation:
             return override_observation
 
-        # 1. Check for Gemini
+        # 1. Primary: Qwen Omni via OpenRouter (ARCHITECTURE.md)
+        if self.provider == "openrouter" and self.openrouter_key:
+            return await self._analyze_with_openrouter(video_path, has_audio)
+
+        # 2. Secondary: Gemini (if explicitly selected or if only Gemini key is available)
         if self.provider == "gemini" and self.gemini_key:
             return await self._analyze_with_gemini(video_path, has_audio)
 
-        # 2. Check for OpenRouter / Qwen Omni
-        if (self.provider == "openrouter" or self.openrouter_key) and self.openrouter_key:
+        if self.openrouter_key:
             return await self._analyze_with_openrouter(video_path, has_audio)
+
+        if self.gemini_key:
+            return await self._analyze_with_gemini(video_path, has_audio)
 
         # 3. Fallback / Mock mode when no API keys are configured (for local dev / CI tests)
         logger.warning(
-            "No active AI API keys configured (GEMINI_API_KEY / OPENROUTER_API_KEY). "
+            "No active AI API keys configured (OPENROUTER_API_KEY / GEMINI_API_KEY). "
             "Using deterministic heuristic mock observation."
         )
         return self._generate_heuristic_observation(video_path, has_audio)
@@ -115,7 +122,7 @@ class VlmClient:
             prompt_text += "\nВНИМАНИЕ: Видеоролик без звука (has_voice_cta: false)."
 
         response = await client.chat.completions.create(
-            model="qwen/qwen-2.5-omni",
+            model=self.openrouter_model,
             messages=[
                 {"role": "system", "content": SKYCOACH_SYSTEM_PROMPT},
                 {

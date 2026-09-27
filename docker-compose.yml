@@ -24,9 +24,10 @@ services:
       - HOST=0.0.0.0
       - DATABASE_URL=sqlite+aiosqlite:////app/data/skycoach.db
       - REDIS_URL=redis://redis:6379/0
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_PROVIDER=${AI_PROVIDER:-openrouter}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen-2.5-omni}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - app_data:/app/data
     depends_on:
@@ -41,9 +42,10 @@ services:
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/skycoach.db
       - REDIS_URL=redis://redis:6379/0
-      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_PROVIDER=${AI_PROVIDER:-openrouter}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
-      - AI_PROVIDER=${AI_PROVIDER:-gemini}
+      - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen-2.5-omni}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
       - app_data:/app/data
     depends_on:

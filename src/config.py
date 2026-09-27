@@ -24,13 +24,17 @@ class Settings(BaseSettings):
         description="Redis connection URL for RQ background workers",
     )
 
-    # Multimodal AI settings
-    AI_PROVIDER: Literal["gemini", "openrouter"] = Field(
-        default="gemini",
-        description="AI model provider: 'gemini' (Gemini 2.5 Flash) or 'openrouter' (Qwen Omni)",
+    # Multimodal AI settings (Default per ARCHITECTURE.md: Qwen via OpenRouter)
+    AI_PROVIDER: Literal["openrouter", "gemini"] = Field(
+        default="openrouter",
+        description="Primary AI provider: 'openrouter' (Qwen Omni) or 'gemini'",
+    )
+    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API key")
+    OPENROUTER_MODEL: str = Field(
+        default="qwen/qwen-2.5-omni",
+        description="Model slug on OpenRouter (e.g. qwen/qwen-2.5-omni / qwen/qwen-3.8-omni-flash)",
     )
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key")
-    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API key")
 
     # Timeouts and business limits
     TASK_TIMEOUT_SECONDS: int = Field(
