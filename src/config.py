@@ -1,5 +1,3 @@
-from typing import Literal
-
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -24,17 +22,46 @@ class Settings(BaseSettings):
         description="Redis connection URL for RQ background workers",
     )
 
-    # Multimodal AI settings (Default per ARCHITECTURE.md: Qwen via OpenRouter)
-    AI_PROVIDER: Literal["openrouter", "gemini"] = Field(
-        default="openrouter",
-        description="Primary AI provider: 'openrouter' (Qwen Omni) or 'gemini'",
+    # Universal OpenAI-Compatible Multimodal AI settings
+    # Compatible with OpenRouter, Alibaba DashScope, SiliconFlow, vLLM, OpenAI, etc.
+    AI_PROVIDER: str = Field(
+        default="openai_compatible",
+        description="Provider mode: 'openai_compatible' (default) or 'gemini'",
     )
-    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API key")
+    OPENAI_API_KEY: str = Field(
+        default="", description="API key for any OpenAI-compatible provider"
+    )
+    OPENAI_BASE_URL: str = Field(
+        default="https://openrouter.ai/api/v1",
+        description="Base URL for OpenAI-compatible endpoint (e.g. OpenRouter, DashScope, SiliconFlow)",
+    )
+    OPENAI_MODEL: str = Field(
+        default="qwen/qwen3.8-omni-flash",
+        description="Model identifier (e.g. qwen/qwen3.8-omni-flash, gpt-4o-mini)",
+    )
+
+    # Legacy / Provider-specific aliases (for backward compatibility)
+    OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API key alias")
     OPENROUTER_MODEL: str = Field(
         default="qwen/qwen3.8-omni-flash",
-        description="Model slug on OpenRouter (qwen/qwen3.8-omni-flash)",
+        description="OpenRouter model slug alias",
     )
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key")
+
+    @property
+    def effective_api_key(self) -> str:
+        """Returns the active API key across generic and specific configs."""
+        return self.OPENAI_API_KEY or self.OPENROUTER_API_KEY or self.GEMINI_API_KEY
+
+    @property
+    def effective_base_url(self) -> str:
+        """Returns the active base URL for OpenAI-compatible requests."""
+        return self.OPENAI_BASE_URL or "https://openrouter.ai/api/v1"
+
+    @property
+    def effective_model(self) -> str:
+        """Returns the active model slug across generic and specific configs."""
+        return self.OPENAI_MODEL or self.OPENROUTER_MODEL or "qwen/qwen3.8-omni-flash"
 
     # Timeouts and business limits
     TASK_TIMEOUT_SECONDS: int = Field(
