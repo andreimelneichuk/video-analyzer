@@ -31,8 +31,8 @@ class Settings(BaseSettings):
     )
     OPENROUTER_API_KEY: str = Field(default="", description="OpenRouter API key")
     OPENROUTER_MODEL: str = Field(
-        default="qwen/qwen-2.5-omni",
-        description="Model slug on OpenRouter (e.g. qwen/qwen-2.5-omni / qwen/qwen-3.8-omni-flash)",
+        default="qwen/qwen3.8-omni-flash",
+        description="Model slug on OpenRouter (qwen/qwen3.8-omni-flash)",
     )
     GEMINI_API_KEY: str = Field(default="", description="Google Gemini API key")
 
