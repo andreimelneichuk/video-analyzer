@@ -62,8 +62,8 @@ def test_extractor_preserves_none_metrics(mock_ydl_cls):
 
     mock_ydl.extract_info.return_value = {
         "view_count": 529000,
-        "like_count": None,        # Hidden likes!
-        "comment_count": None,     # Hidden comments!
+        "like_count": None,  # Hidden likes!
+        "comment_count": None,  # Hidden comments!
         "uploader": "valorant_funzone",
         "upload_date": "20260920",
         "duration": 15.0,
@@ -124,7 +124,9 @@ def test_extractor_timeout_error(mock_ydl_cls):
     """Verifies handling of handshake / network timeouts."""
     mock_ydl = MagicMock()
     mock_ydl_cls.return_value.__enter__.return_value = mock_ydl
-    mock_ydl.extract_info.side_effect = yt_dlp.utils.DownloadError("The handshake operation timed out")
+    mock_ydl.extract_info.side_effect = yt_dlp.utils.DownloadError(
+        "The handshake operation timed out"
+    )
 
     extractor = YtDlpExtractor()
     with pytest.raises(ExtractionTimeoutError) as exc_info:

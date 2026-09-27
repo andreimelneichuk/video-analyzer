@@ -93,9 +93,14 @@ class YtDlpExtractor:
 
         except yt_dlp.utils.DownloadError as e:
             err_msg = str(e).lower()
-            if any(k in err_msg for k in ["private", "login", "requires authentication", "restricted"]):
+            if any(
+                k in err_msg for k in ["private", "login", "requires authentication", "restricted"]
+            ):
                 raise PrivateAccountError() from e
-            elif any(k in err_msg for k in ["not found", "404", "deleted", "unavailable", "does not exist"]):
+            elif any(
+                k in err_msg
+                for k in ["not found", "404", "deleted", "unavailable", "does not exist"]
+            ):
                 raise VideoNotFoundError() from e
             elif any(k in err_msg for k in ["timed out", "timeout", "handshake"]):
                 raise ExtractionTimeoutError() from e
