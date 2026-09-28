@@ -181,3 +181,72 @@ async def test_vlm_client_heuristic_mode():
     assert obs.is_product_advertised is True
     assert obs.banner_duration_seconds > 0
     assert obs.screen_percentage > 0
+
+
+def test_wrong_logo_reduces_prominence_rating_and_applies_penalty():
+    """
+    Verifies that if a different/foreign logo is displayed instead of the official
+    Skycoach logo, the prominence score rating is reduced by 2 points and a 30% deduction applies.
+    """
+    # Normal banner without defect would have prominence score = 4 (duration 7.0s, area 8.0%)
+    obs_good = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        has_correct_logo=True,
+        banner_duration_seconds=7.0,
+        screen_percentage=8.0,
+        has_voice_cta=False,
+        has_text_cta=True,
+        promo_code="BOOST",
+        observed_defects=[],
+        visual_observations="Баннер с официальным логотипом Skycoach.",
+    )
+    result_good = SkycoachRuleEngine.evaluate(obs_good)
+    assert result_good.prominence_score == 4
+    assert result_good.deduction_percent == 0
+    assert result_good.has_correct_logo is True
+
+    # Same banner but with a foreign/competitor logo
+    obs_wrong_logo = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        has_correct_logo=False,  # Wrong logo detected!
+        banner_duration_seconds=7.0,
+        screen_percentage=8.0,
+        has_voice_cta=False,
+        has_text_cta=True,
+        promo_code="BOOST",
+        observed_defects=[BannerDefect.WRONG_LOGO],
+        visual_observations="На баннере изображен логотип стороннего сервиса вместо Skycoach.",
+    )
+    result_wrong = SkycoachRuleEngine.evaluate(obs_wrong_logo)
+
+    # Prominence score MUST be reduced (from 4 down to 2)
+    assert result_wrong.prominence_score == 2
+    assert result_wrong.has_correct_logo is False
+    assert BannerDefect.WRONG_LOGO.value in result_wrong.defects
+    assert result_wrong.deduction_percent == 30
+    assert "Чужой или некорректный логотип на баннере (-30%)" in result_wrong.payout_recommendation
+    assert "рейтинг заметности снижен" in result_wrong.reasoning
+
+
+def test_has_correct_logo_false_auto_triggers_wrong_logo_defect():
+    """Verifies that has_correct_logo=False automatically injects WRONG_LOGO defect."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        has_correct_logo=False,
+        banner_duration_seconds=5.0,
+        screen_percentage=5.0,
+        has_voice_cta=False,
+        has_text_cta=False,
+        promo_code=None,
+        observed_defects=[],  # empty, should auto-detect WRONG_LOGO
+        visual_observations="Баннер с логотипом конкурента.",
+    )
+    result = SkycoachRuleEngine.evaluate(obs)
+
+    assert result.has_correct_logo is False
+    assert BannerDefect.WRONG_LOGO.value in result.defects
+    assert result.deduction_percent == 30
+    assert result.prominence_score == 1  # Base score 3 - 2 = 1

@@ -30,6 +30,9 @@ class IntegrationAnalysis(Base):
     # Visual ad prominence score (1 to 5)
     prominence_score: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
+    # Brand logo verification (official Skycoach logo vs other/foreign logo)
+    has_correct_logo: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
     # Quantitative characteristics
     banner_duration_seconds: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     screen_percentage: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)

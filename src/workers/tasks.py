@@ -94,6 +94,7 @@ async def _execute_task_pipeline(task_id: str, session: AsyncSession) -> Task | 
             task_id=task.id,
             integration_class=evaluated_analysis.integration_class,
             prominence_score=evaluated_analysis.prominence_score,
+            has_correct_logo=evaluated_analysis.has_correct_logo,
             banner_duration_seconds=evaluated_analysis.banner_duration_seconds,
             screen_percentage=evaluated_analysis.screen_percentage,
             has_voice_cta=evaluated_analysis.has_voice_cta,

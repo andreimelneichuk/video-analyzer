@@ -15,6 +15,10 @@ class VlmRawObservation(BaseModel):
     is_product_advertised: bool = Field(
         description="Whether a specific Skycoach service/product (game boosting, currency, raid carry) is promoted",
     )
+    has_correct_logo: bool = Field(
+        default=True,
+        description="Whether the official Skycoach logo is present. False if a different/foreign logo is shown",
+    )
     banner_duration_seconds: float = Field(
         ge=0.0,
         description="Total duration in seconds the Skycoach banner or logo was visible in frame",
@@ -50,6 +54,7 @@ class IntegrationAnalysisResponse(BaseModel):
 
     integration_class: IntegrationClass
     prominence_score: int
+    has_correct_logo: bool = True
     banner_duration_seconds: float
     screen_percentage: float
     has_voice_cta: bool

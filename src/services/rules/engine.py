@@ -27,6 +27,7 @@ class SkycoachRuleEngine:
             return IntegrationAnalysis(
                 integration_class=IntegrationClass.NONE,
                 prominence_score=1,
+                has_correct_logo=False,
                 banner_duration_seconds=0.0,
                 screen_percentage=0.0,
                 has_voice_cta=False,
@@ -42,7 +43,7 @@ class SkycoachRuleEngine:
                 ),
             )
 
-        # 2. Prominence Score calculation (1 to 5)
+        # 2. Prominence Score calculation (1 to 5, penalized if wrong logo)
         prominence_score = cls._calculate_prominence(obs)
 
         # 3. Deductions & defect penalties calculation
@@ -53,9 +54,12 @@ class SkycoachRuleEngine:
             obs, integration_class, prominence_score, defects, recommendation
         )
 
+        has_correct = obs.has_correct_logo and (BannerDefect.WRONG_LOGO not in defects)
+
         return IntegrationAnalysis(
             integration_class=integration_class,
             prominence_score=prominence_score,
+            has_correct_logo=has_correct,
             banner_duration_seconds=obs.banner_duration_seconds,
             screen_percentage=obs.screen_percentage,
             has_voice_cta=obs.has_voice_cta,
@@ -72,21 +76,28 @@ class SkycoachRuleEngine:
         """
         Evaluates prominence score from 1 (flash of logo) to 5 (very aggressive)
         based on duration, screen percentage, and calls to action.
+        Penalizes score if a wrong or foreign logo is detected.
         """
         dur = obs.banner_duration_seconds
         area = obs.screen_percentage
         has_cta = obs.has_voice_cta or obs.has_text_cta
 
         if dur < 2.0 and area < 4.0:
-            return 1
+            score = 1
         elif dur < 4.5 and not has_cta:
-            return 2
+            score = 2
         elif dur >= 9.0 and area >= 12.0 and obs.has_voice_cta:
-            return 5
+            score = 5
         elif (dur >= 6.5 and area >= 7.0) or (has_cta and area >= 6.0):
-            return 4
+            score = 4
         else:
-            return 3
+            score = 3
+
+        # If banner has a wrong/competitor logo, severely reduce the prominence rating
+        if not obs.has_correct_logo or BannerDefect.WRONG_LOGO in obs.observed_defects:
+            score = max(1, score - 2)
+
+        return score
 
     @staticmethod
     def _calculate_deductions(
@@ -98,6 +109,7 @@ class SkycoachRuleEngine:
         - Banner too small -> 30% deduction (20% if only slightly small)
         - Banner too low / overlapped by UI or camera -> 20% deduction
         - Banner not visible / fully covered -> excluded (100% deduction / 0 payout)
+        - Wrong logo / competitor logo -> 30% deduction
         """
         defects = list(obs.observed_defects)
 
@@ -110,6 +122,10 @@ class SkycoachRuleEngine:
         # Auto-detect too small banner if below 4.0% threshold
         if obs.screen_percentage < 4.0 and BannerDefect.TOO_SMALL not in defects:
             defects.append(BannerDefect.TOO_SMALL)
+
+        # Auto-detect wrong logo defect if has_correct_logo is False
+        if not obs.has_correct_logo and BannerDefect.WRONG_LOGO not in defects:
+            defects.append(BannerDefect.WRONG_LOGO)
 
         deduction = 0
         reasons: list[str] = []
@@ -126,6 +142,10 @@ class SkycoachRuleEngine:
             penalty = 30 if obs.screen_percentage < 3.2 else 20
             deduction += penalty
             reasons.append(f"Баннер слишком мелкий (-{penalty}%)")
+
+        if BannerDefect.WRONG_LOGO in defects:
+            deduction += 30
+            reasons.append("Чужой или некорректный логотип на баннере (-30%)")
 
         # Cap deduction at 100%
         deduction = min(deduction, 100)
@@ -165,12 +185,18 @@ class SkycoachRuleEngine:
         if obs.promo_code:
             parts.append(f"Распознан промокод: '{obs.promo_code}'.")
 
+        if not obs.has_correct_logo or BannerDefect.WRONG_LOGO in defects:
+            parts.append(
+                "Внимание: обнаружен чужой или некорректный логотип (не Skycoach), рейтинг заметности снижен."
+            )
+
         if defects:
             defect_labels = {
                 BannerDefect.CUT_OFF_EDGE: "обрезан по краю",
                 BannerDefect.TOO_SMALL: "слишком мелкий",
                 BannerDefect.OVERLAPPED_BY_UI: "перекрыт интерфейсом Reels / камерой",
                 BannerDefect.NOT_VISIBLE: "не виден / скрыт",
+                BannerDefect.WRONG_LOGO: "чужой/некорректный логотип на баннере",
             }
             defect_names = [defect_labels.get(d, d.value) for d in defects]
             parts.append(f"Обнаружены дефекты размещения: {', '.join(defect_names)}.")

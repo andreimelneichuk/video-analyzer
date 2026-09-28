@@ -31,9 +31,11 @@ class BannerDefect(str, Enum):
     - too_small: Banner too small -> 30% deduction (or 20% if only slightly small)
     - overlapped_by_ui: Overlapped by UI buttons, captions, camera notch -> 20% deduction
     - not_visible: Banner not visible / fully obscured -> excluded (0 payout)
+    - wrong_logo: Different/foreign logo or competitor instead of official Skycoach logo -> reduces rating & 30% deduction
     """
 
     CUT_OFF_EDGE = "cut_off_edge"
     TOO_SMALL = "too_small"
     OVERLAPPED_BY_UI = "overlapped_by_ui"
     NOT_VISIBLE = "not_visible"
+    WRONG_LOGO = "wrong_logo"

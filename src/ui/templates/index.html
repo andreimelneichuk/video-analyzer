@@ -382,8 +382,10 @@
           const stars = '⭐'.repeat(score);
           const dur = task.analysis.banner_duration_seconds;
           const area = task.analysis.screen_percentage;
+          const hasWrongLogo = task.analysis.has_correct_logo === false || (task.analysis.defects && task.analysis.defects.includes('wrong_logo'));
+          const logoWarning = hasWrongLogo ? '<span class="badge badge-xs bg-rose-950 text-rose-300 border-rose-800 ml-1">Чужое лого</span>' : '';
           prominenceHtml = `
-            <div class="font-medium text-amber-400 text-xs flex items-center gap-1">${stars} <span class="text-slate-300">(${score}/5)</span></div>
+            <div class="font-medium text-amber-400 text-xs flex items-center gap-1">${stars} <span class="text-slate-300">(${score}/5)</span> ${logoWarning}</div>
             <div class="text-[11px] text-slate-400 font-mono mt-0.5">${dur.toFixed(1)}с · ${area.toFixed(1)}% кадра</div>
           `;
         }
@@ -449,21 +451,35 @@
       
       let analysisHtml = '';
       if (task.analysis) {
+        const defectTranslations = {
+          'cut_off_edge': 'Обрезан по краю (-20%)',
+          'too_small': 'Слишком мелкий (-30%)',
+          'overlapped_by_ui': 'Перекрыт интерфейсом (-20%)',
+          'not_visible': 'Не виден (100% отказ)',
+          'wrong_logo': 'Чужой/некорректный логотип (-30%)'
+        };
+
         const defectsList = task.analysis.defects && task.analysis.defects.length > 0 
-          ? task.analysis.defects.map(d => `<span class="badge badge-error badge-sm text-xs">${d}</span>`).join(' ')
+          ? task.analysis.defects.map(d => `<span class="badge badge-error badge-sm text-xs">${defectTranslations[d] || d}</span>`).join(' ')
           : '<span class="text-emerald-400 text-xs font-medium">Дефектов размещения не обнаружено</span>';
+
+        const logoStatusBadge = task.analysis.has_correct_logo !== false && (!task.analysis.defects || !task.analysis.defects.includes('wrong_logo'))
+          ? '<strong class="text-emerald-400">✓ Официальный Skycoach</strong>'
+          : '<strong class="text-rose-400">✗ Чужой логотип (-30% штраф)</strong>';
 
         analysisHtml = `
           <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-3">
             <div class="grid grid-cols-2 gap-2 text-xs">
               <div><span class="text-slate-400">Класс интеграции:</span> <strong class="text-white">${task.analysis.integration_class}</strong></div>
               <div><span class="text-slate-400">Заметность:</span> <strong class="text-amber-400">${task.analysis.prominence_score}/5</strong></div>
+              <div><span class="text-slate-400">Логотип бренда:</span> ${logoStatusBadge}</div>
+              <div><span class="text-slate-400">Вердикт выплат:</span> <strong class="text-emerald-400">${task.analysis.payout_recommendation}</strong></div>
               <div><span class="text-slate-400">Хронометраж баннера:</span> <strong>${task.analysis.banner_duration_seconds.toFixed(1)} сек</strong></div>
               <div><span class="text-slate-400">Доля экрана:</span> <strong>${task.analysis.screen_percentage.toFixed(1)}%</strong></div>
               <div><span class="text-slate-400">Голосовой CTA:</span> <strong>${task.analysis.has_voice_cta ? 'Да' : 'Нет'}</strong></div>
               <div><span class="text-slate-400">Текстовый CTA:</span> <strong>${task.analysis.has_text_cta ? 'Да' : 'Нет'}</strong></div>
               <div><span class="text-slate-400">Промокод:</span> <strong class="text-orange-400">${task.analysis.promo_code || '—'}</strong></div>
-              <div><span class="text-slate-400">Вердикт выплат:</span> <strong class="text-emerald-400">${task.analysis.payout_recommendation}</strong></div>
+              <div><span class="text-slate-400">Штраф:</span> <strong class="text-rose-400">-${task.analysis.deduction_percent}%</strong></div>
             </div>
 
             <div class="pt-2 border-t border-slate-800">
