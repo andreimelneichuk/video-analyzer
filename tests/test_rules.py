@@ -70,6 +70,29 @@ def test_no_mention_class_0():
     assert "Excluded" in result.payout_recommendation
 
 
+def test_game_hud_without_skycoach_is_class_0():
+    """
+    Verifies that gameplay of Valorant or other games without Skycoach brand
+    is strictly Class 0 (no payout).
+    """
+    obs = VlmRawObservation(
+        has_skycoach_mention=False,  # Skycoach is NOT present
+        is_product_advertised=False,
+        banner_duration_seconds=0.0,
+        screen_percentage=0.0,
+        has_voice_cta=False,
+        has_text_cta=False,
+        promo_code=None,
+        observed_defects=[],
+        visual_observations="В кадре чистый геймплей Valorant, виден логотип игры и оружие, но рекламы Skycoach нет.",
+    )
+    result = SkycoachRuleEngine.evaluate(obs)
+
+    assert result.integration_class == IntegrationClass.NONE
+    assert result.deduction_percent == 100
+    assert "Excluded / No mention" in result.payout_recommendation
+
+
 def test_cut_off_edge_deduction():
     """Verifies 20% deduction for cut off edge (from banner review examples)."""
     obs = VlmRawObservation(
