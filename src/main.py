@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from src.api.router import api_router
@@ -11,6 +12,8 @@ from src.database import init_db
 
 templates_dir = os.path.join(os.path.dirname(__file__), "ui", "templates")
 templates = Jinja2Templates(directory=templates_dir)
+
+static_dir = os.path.join(os.path.dirname(__file__), "ui", "static")
 
 
 @asynccontextmanager
@@ -28,6 +31,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # Include API routes (/api/tasks, /api/export)
 app.include_router(api_router, prefix="/api")

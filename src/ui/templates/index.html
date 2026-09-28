@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Skycoach Reels Ad Analyzer</title>
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
   <!-- Tailwind CSS & DaisyUI -->
   <link href="https://cdn.jsdelivr.net/npm/daisyui@4.12.10/dist/full.min.css" rel="stylesheet" type="text/css" />
   <script src="https://cdn.tailwindcss.com"></script>
@@ -35,15 +36,16 @@
 
   <!-- Navbar -->
   <header class="navbar glass-panel sticky top-0 z-50 px-6 py-3 border-b border-slate-800">
-    <div class="flex-1 flex items-center gap-3">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-orange-500/20 text-white font-bold text-xl">
-        S
-      </div>
+    <div class="flex-1 flex items-center gap-3.5">
+      <img src="/static/favicon.svg" alt="Skycoach" class="w-10 h-10 rounded-xl shadow-lg shadow-indigo-500/25 object-contain hover:scale-105 transition-transform" />
       <div>
-        <h1 class="text-xl font-bold tracking-tight text-white flex items-center gap-2">
-          Skycoach <span class="text-orange-500">Reels</span> Analyzer
-        </h1>
-        <p class="text-xs text-slate-400">Автоматическая оценка рекламных интеграций в Instagram Reels</p>
+        <div class="flex items-center gap-2.5">
+          <img src="/static/logo.svg" alt="Skycoach" class="h-5 w-auto" />
+          <span class="text-[11px] px-2 py-0.5 rounded-full font-bold bg-orange-500/20 text-orange-400 border border-orange-500/30 uppercase tracking-wider">
+            Reels Analyzer
+          </span>
+        </div>
+        <p class="text-xs text-slate-400 mt-0.5">Автоматическая оценка рекламных интеграций в Instagram Reels</p>
       </div>
     </div>
     <div class="flex-none flex items-center gap-3">
@@ -148,6 +150,7 @@
   <dialog id="detailModal" class="modal modal-bottom sm:modal-middle">
     <div class="modal-box bg-slate-900 border border-slate-800 text-slate-100 max-w-2xl">
       <h3 class="font-bold text-lg flex items-center gap-2" id="modalTitle">
+        <img src="/static/favicon.svg" alt="Skycoach" class="w-5 h-5 rounded inline-block" />
         Анализ интеграции Skycoach
       </h3>
       <div class="py-4 space-y-4" id="modalBody">
