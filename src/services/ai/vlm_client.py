@@ -85,6 +85,8 @@ class VlmClient:
         if not has_audio:
             prompt_text += "\nВНИМАНИЕ: Видеоролик без звуковой дорожки (has_voice_cta: false)."
 
+        ref_logo_b64 = self._get_reference_logo_b64()
+
         # Try direct video_url first
         try:
             import anyio
@@ -93,21 +95,43 @@ class VlmClient:
                 video_bytes = await f.read()
             b64_video = base64.b64encode(video_bytes).decode("utf-8")
 
+            direct_content: list[dict] = []
+            if ref_logo_b64:
+                direct_content.extend(
+                    [
+                        {
+                            "type": "text",
+                            "text": (
+                                "ЭТАЛОН ОФИЦИАЛЬНОГО ЛОГОТИПА SKYCOACH (REFERENCE LOGO):\n"
+                                "Ниже приведено официальное изображение бренда Skycoach. "
+                                "Сверяй баннеры и логотипы в видеоролике с этим эталоном:\n"
+                            ),
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{ref_logo_b64}",
+                                "detail": "high",
+                            },
+                        },
+                    ]
+                )
+            direct_content.extend(
+                [
+                    {"type": "text", "text": prompt_text},
+                    {
+                        "type": "video_url",
+                        "video_url": {"url": f"data:video/mp4;base64,{b64_video}"},
+                    },
+                ]
+            )
+
             logger.info("Sending direct video stream to OpenAI-compatible API (%s)...", self.model)
             response = await client.chat.completions.create(
                 model=self.model,
                 messages=[
                     {"role": "system", "content": SKYCOACH_SYSTEM_PROMPT},
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt_text},
-                            {
-                                "type": "video_url",
-                                "video_url": {"url": f"data:video/mp4;base64,{b64_video}"},
-                            },
-                        ],
-                    },
+                    {"role": "user", "content": direct_content},
                 ],
                 response_format={"type": "json_object"},
                 temperature=0.1,
@@ -126,7 +150,36 @@ class VlmClient:
 
         # Universal Keyframe Vision Mode (works across ALL OpenAI-compatible multimodal providers)
         keyframes_b64 = self._extract_keyframes(video_path, max_frames=6)
-        user_content: list[dict] = [{"type": "text", "text": prompt_text}]
+        user_content: list[dict] = []
+
+        if ref_logo_b64:
+            user_content.extend(
+                [
+                    {
+                        "type": "text",
+                        "text": (
+                            "ЭТАЛОН ОФИЦИАЛЬНОГО ЛОГОТИПА SKYCOACH (REFERENCE LOGO ДЛЯ СВЕРКИ):\n"
+                            "Ниже представлено официальное изображение логотипа бренда Skycoach. "
+                            "Внимательно сравнивай любые баннеры, оверлеи и логотипы в видеоролике с этим эталоном.\n"
+                            "Если на баннере отображается чужой логотип, логотип конкурента или логотип не соответствует бренду Skycoach — "
+                            "ты ОБЯЗАН установить: has_correct_logo: false и добавить дефект 'wrong_logo'."
+                        ),
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{ref_logo_b64}",
+                            "detail": "high",
+                        },
+                    },
+                    {
+                        "type": "text",
+                        "text": f"КАДРЫ АНАЛИЗИРУЕМОГО ВИДЕОРОЛИКА:\n{prompt_text}",
+                    },
+                ]
+            )
+        else:
+            user_content.append({"type": "text", "text": prompt_text})
 
         for idx, b64_img in enumerate(keyframes_b64):
             user_content.append(
@@ -140,7 +193,7 @@ class VlmClient:
             )
 
         logger.info(
-            "Sending %d keyframes to OpenAI-compatible endpoint (%s at %s)...",
+            "Sending reference logo + %d keyframes to OpenAI-compatible endpoint (%s at %s)...",
             len(keyframes_b64),
             self.model,
             self.base_url,
@@ -185,6 +238,26 @@ class VlmClient:
                 parsed = parsed["result"]
 
         return VlmRawObservation(**parsed)
+
+    @classmethod
+    def _get_reference_logo_b64(cls) -> str | None:
+        """
+        Loads the official Skycoach reference logo image as base64 JPEG
+        for visual few-shot grounding / logo comparison.
+        """
+        ref_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+            "ui",
+            "static",
+            "skycoach_reference_logo.jpg",
+        )
+        if os.path.exists(ref_path):
+            try:
+                with open(ref_path, "rb") as f:
+                    return base64.b64encode(f.read()).decode("utf-8")
+            except (OSError, ValueError) as e:
+                logger.warning("Could not read reference logo: %s", e)
+        return None
 
     @staticmethod
     def _extract_keyframes(video_path: str, max_frames: int = 6) -> list[str]:

@@ -183,6 +183,13 @@ async def test_vlm_client_heuristic_mode():
     assert obs.screen_percentage > 0
 
 
+def test_vlm_client_reference_logo_loaded():
+    """Verifies that the official reference logo is successfully loaded as base64."""
+    b64_logo = VlmClient._get_reference_logo_b64()
+    assert b64_logo is not None
+    assert len(b64_logo) > 1000  # Should be a valid base64 image data string
+
+
 def test_wrong_logo_reduces_prominence_rating_and_applies_penalty():
     """
     Verifies that if a different/foreign logo is displayed instead of the official
