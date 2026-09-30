@@ -6,7 +6,7 @@ import shutil
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.database import AsyncSessionLocal
+from src.database import WorkerSessionLocal
 from src.models import IntegrationAnalysis, ReelMetrics, Task, TaskStatus
 from src.services.ai.vlm_client import VlmClient
 from src.services.extractor.exceptions import ExtractorError
@@ -39,7 +39,7 @@ async def async_process_reel_task(
     if db_session is not None:
         return await _execute_task_pipeline(task_id, db_session)
 
-    async with AsyncSessionLocal() as session:
+    async with WorkerSessionLocal() as session:
         return await _execute_task_pipeline(task_id, session)
 
 

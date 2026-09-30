@@ -34,14 +34,25 @@ is_sqlite = database_url.startswith("sqlite")
 
 # Configure async engine
 # For SQLite, we pass timeout and enable WAL mode on connect.
-# For PostgreSQL, no pooling: the worker runs every task in its own event loop
-# and asyncpg connections can't be shared across loops.
+# For PostgreSQL the web app keeps a small pool (a fresh TLS connection per
+# request costs seconds on a remote database); pre-ping and recycle cover the
+# database suspending idle connections.
 engine = create_async_engine(
     database_url,
     echo=settings.DEBUG,
     connect_args=connect_args,
     future=True,
-    **({} if is_sqlite else {"poolclass": NullPool}),
+    **({} if is_sqlite else {"pool_size": 3, "pool_pre_ping": True, "pool_recycle": 240}),
+)
+
+# The worker runs every task in its own event loop and asyncpg connections
+# can't be shared across loops, so it gets an engine without pooling.
+worker_engine = (
+    engine
+    if is_sqlite
+    else create_async_engine(
+        database_url, echo=settings.DEBUG, connect_args=connect_args, poolclass=NullPool
+    )
 )
 
 if is_sqlite:
@@ -58,6 +69,15 @@ if is_sqlite:
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autocommit=False,
+    autoflush=False,
+)
+
+
+WorkerSessionLocal = async_sessionmaker(
+    bind=worker_engine,
     class_=AsyncSession,
     expire_on_commit=False,
     autocommit=False,

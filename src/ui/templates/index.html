@@ -270,7 +270,7 @@
     });
 
     btnRefresh.addEventListener('click', () => {
-      loadRecentTasks();
+      loadRecentTasks(0);
     });
 
     // Submit batch tasks
@@ -380,15 +380,28 @@
     }
 
     // Load recent tasks on page load
-    async function loadRecentTasks() {
+    // The host may be waking up or busy: retry instead of showing an empty table
+    async function loadRecentTasks(attempt = 0) {
       try {
         const res = await fetch('/api/tasks?limit=30');
-        if (!res.ok) return;
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const tasks = await res.json();
-        tasks.forEach(t => taskCache.set(t.id, t));
+        tasks.forEach(t => {
+          taskCache.set(t.id, t);
+          // Resume live updates for tasks still running after a page reload
+          if (!['COMPLETED', 'FAILED'].includes(t.status)) activePollingIds.add(t.id);
+        });
         renderTasks();
+        startPolling();
       } catch (e) {
         console.error(e);
+        if (attempt < 5) {
+          progressAlert.classList.remove('hidden');
+          progressStatusText.textContent = 'Сервер не ответил, повторяю загрузку списка...';
+          setTimeout(() => loadRecentTasks(attempt + 1), 3000);
+        } else {
+          progressStatusText.textContent = 'Не удалось загрузить список задач. Нажмите «Обновить».';
+        }
       }
     }
 
