@@ -61,7 +61,7 @@ async def serve_index(request: Request):
     return templates.TemplateResponse(request=request, name="index.html")
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 async def health_check():
     """Health check endpoint for container probes."""
     return {"status": "ok", "app": settings.APP_NAME}
