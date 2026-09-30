@@ -15,6 +15,12 @@ COPY pyproject.toml .
 # Create virtual environment and install dependencies
 RUN uv venv /app/.venv && uv pip install --no-cache -r pyproject.toml
 
+# sing-box: optional VLESS client for YouTube downloads (see src/vpn_bootstrap.py)
+ARG SING_BOX_VERSION=1.11.4
+ARG TARGETARCH=amd64
+RUN curl -fsSL "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/sing-box-${SING_BOX_VERSION}-linux-${TARGETARCH}.tar.gz" \
+    | tar -xz -C /tmp && mv /tmp/sing-box-*/sing-box /usr/local/bin/sing-box
+
 # --- Stage 2: Final lightweight runtime container ---
 FROM python:3.13-slim
 
@@ -31,6 +37,7 @@ COPY . /app
 
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
+COPY --from=builder /usr/local/bin/sing-box /usr/local/bin/sing-box
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
@@ -39,4 +46,5 @@ RUN mkdir -p /app/data /app/temp
 
 EXPOSE 8080
 
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Starts the VLESS proxy when VLESS_URL is set, then execs uvicorn
+CMD ["python", "-m", "src.vpn_bootstrap"]

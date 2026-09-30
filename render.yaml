@@ -31,3 +31,7 @@ services:
       # YouTube's bot check). Set in the dashboard, e.g. http://host:port
       - key: YOUTUBE_PROXY
         sync: false
+      # Optional: vless:// link or subscription URL; starts a local sing-box
+      # SOCKS proxy and sets YOUTUBE_PROXY to it. Set in the dashboard.
+      - key: VLESS_URL
+        sync: false
