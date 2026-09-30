@@ -2,6 +2,31 @@ from src.models.analysis import IntegrationAnalysis
 from src.models.enums import BannerDefect, IntegrationClass
 from src.schemas.analysis import VlmRawObservation
 
+# Calibrated on banner_review_examples.pdf: "too small" banners measured 2.4-4.6%
+# of the frame, fully paid ones 5.4% and up.
+TOO_SMALL_AREA_PERCENT = 5.0
+# "Slightly small" band gets the reduced 20% from the PDF quick guide: DbpiVrpMa1j
+# measured 5.5% and was docked 20%; the smallest fully paid banner is 5.8%.
+SLIGHTLY_SMALL_AREA_PERCENT = 5.7
+
+# Banner bbox is in 0-1000 frame coordinates. A box within this margin of the
+# left/right/top frame edge means the banner runs off-screen (logo clipped).
+EDGE_MARGIN = 10
+
+# Top strip covered by the Reels/Shorts/Facebook app header. A banner flush to
+# the top edge (Facebook example #20) sits under it and is not visible.
+APP_HEADER_ZONE = 80
+HEADER_NOT_VISIBLE_SHARE = 0.6
+
+# Like/comment/share/remix column on the right of Shorts/Reels, measured from
+# app screenshots (x from ~87% of the width, y from ~51% to ~98% of the height).
+SIDE_BUTTONS_ZONE = (870, 510, 1000, 980)
+
+# A banner only counts as covered when the permanent app UI hides a real part of
+# it: Dbghg_3RrsX grazes the header by 2px and is paid in full. Transient overlays
+# (YouTube "Auto-dubbed" badge, search suggestion) are ignored on purpose.
+UI_OVERLAP_SHARE = 0.25
+
 
 class SkycoachRuleEngine:
     """
@@ -106,12 +131,15 @@ class SkycoachRuleEngine:
         """
         Computes exact payout deductions matching Skycoach banner review examples:
         - Banner cut off (edge / logo clipped) -> 20% deduction
-        - Banner too small -> 30% deduction (20% if only slightly small)
+        - Banner too small (< 5% of frame) -> 30% deduction
         - Banner too low / overlapped by UI or camera -> 20% deduction
         - Banner not visible / fully covered -> excluded (100% deduction / 0 payout)
         - Wrong logo / competitor logo -> 30% deduction
         """
         defects = list(obs.observed_defects)
+        for defect in SkycoachRuleEngine._placement_defects(obs.banner_bbox):
+            if defect not in defects:
+                defects.append(defect)
 
         # Severely obscured or not visible
         if BannerDefect.NOT_VISIBLE in defects or obs.screen_percentage < 0.8:
@@ -119,45 +147,67 @@ class SkycoachRuleEngine:
                 defects.append(BannerDefect.NOT_VISIBLE)
             return 100, defects, "Excluded (Banner not visible)"
 
-        # Auto-detect too small banner if below 4.0% threshold
-        if obs.screen_percentage < 4.0 and BannerDefect.TOO_SMALL not in defects:
+        # Auto-detect too small banner
+        if (
+            obs.screen_percentage < SLIGHTLY_SMALL_AREA_PERCENT
+            and BannerDefect.TOO_SMALL not in defects
+        ):
             defects.append(BannerDefect.TOO_SMALL)
+        slightly_small = (
+            TOO_SMALL_AREA_PERCENT <= obs.screen_percentage < SLIGHTLY_SMALL_AREA_PERCENT
+        )
 
         # Auto-detect wrong logo defect if has_correct_logo is False
         if not obs.has_correct_logo and BannerDefect.WRONG_LOGO not in defects:
             defects.append(BannerDefect.WRONG_LOGO)
 
-        deduction = 0
-        reasons: list[str] = []
+        penalties = [
+            (BannerDefect.CUT_OFF_EDGE, 20, "Баннер обрезан по краю (-20%)"),
+            (BannerDefect.OVERLAPPED_BY_UI, 20, "Баннер перекрыт интерфейсом или камерой (-20%)"),
+            (BannerDefect.TOO_SMALL, 20, "Баннер немного мелковат (-20%)")
+            if slightly_small
+            else (BannerDefect.TOO_SMALL, 30, "Баннер слишком мелкий (-30%)"),
+            (BannerDefect.WRONG_LOGO, 30, "Чужой или некорректный логотип на баннере (-30%)"),
+        ]
+        applied = [(pct, reason) for defect, pct, reason in penalties if defect in defects]
 
-        if BannerDefect.CUT_OFF_EDGE in defects:
-            deduction += 20
-            reasons.append("Баннер обрезан по краю (-20%)")
-
-        if BannerDefect.OVERLAPPED_BY_UI in defects:
-            deduction += 20
-            reasons.append("Баннер перекрыт интерфейсом или камерой (-20%)")
-
-        if BannerDefect.TOO_SMALL in defects:
-            penalty = 30 if obs.screen_percentage < 3.2 else 20
-            deduction += penalty
-            reasons.append(f"Баннер слишком мелкий (-{penalty}%)")
-
-        if BannerDefect.WRONG_LOGO in defects:
-            deduction += 30
-            reasons.append("Чужой или некорректный логотип на баннере (-30%)")
-
-        # Cap deduction at 100%
-        deduction = min(deduction, 100)
+        # The payout examples apply one deduction per video: the heaviest defect
+        # wins, the rest are only reported (cut off + too low -> 20%, not 40%).
+        deduction = max((pct for pct, _ in applied), default=0)
+        reasons = [reason for _, reason in applied]
 
         if deduction == 0:
             recommendation = "Full payout (No deduction)"
-        elif deduction >= 100:
-            recommendation = "Excluded (Multiple severe defects)"
         else:
             recommendation = f"{deduction}% deduction: {', '.join(reasons)}"
 
         return deduction, defects, recommendation
+
+    @staticmethod
+    def _placement_defects(bbox: list[float] | None) -> list[BannerDefect]:
+        """Placement defects that follow from where the banner sits in the frame."""
+        if not bbox or len(bbox) != 4:
+            return []
+        x1, y1, x2, y2 = bbox
+        if max(bbox) <= 1.0:  # 0-1 fractions instead of 0-1000
+            x1, y1, x2, y2 = (v * 1000 for v in bbox)
+        if x2 <= x1 or y2 <= y1:
+            return []
+
+        defects: list[BannerDefect] = []
+        if x1 <= EDGE_MARGIN or x2 >= 1000 - EDGE_MARGIN or y1 <= EDGE_MARGIN:
+            defects.append(BannerDefect.CUT_OFF_EDGE)
+
+        header_overlap = max(0.0, min(y2, APP_HEADER_ZONE) - y1) / (y2 - y1)
+        zx1, zy1, zx2, zy2 = SIDE_BUTTONS_ZONE
+        side_area = max(0.0, min(x2, zx2) - max(x1, zx1)) * max(0.0, min(y2, zy2) - max(y1, zy1))
+        side_overlap = side_area / ((x2 - x1) * (y2 - y1))
+
+        if header_overlap >= HEADER_NOT_VISIBLE_SHARE:
+            defects.append(BannerDefect.NOT_VISIBLE)
+        elif max(header_overlap, side_overlap) >= UI_OVERLAP_SHARE:
+            defects.append(BannerDefect.OVERLAPPED_BY_UI)
+        return defects
 
     @staticmethod
     def _build_reasoning(

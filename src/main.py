@@ -8,7 +8,9 @@ from fastapi.templating import Jinja2Templates
 
 from src.api.router import api_router
 from src.config import settings
-from src.database import init_db
+from src.database import AsyncSessionLocal, init_db
+from src.workers.memory_queue import requeue_unfinished
+from src.workers.queue import get_memory_queue, uses_memory_queue
 
 templates_dir = os.path.join(os.path.dirname(__file__), "ui", "templates")
 templates = Jinja2Templates(directory=templates_dir)
@@ -22,7 +24,18 @@ async def lifespan(app: FastAPI):
     # Ensure local data directory exists for SQLite
     os.makedirs("./data", exist_ok=True)
     await init_db()
+
+    if not uses_memory_queue():
+        yield
+        return
+
+    # Single-container mode: the web process also works the queue
+    memory_queue = get_memory_queue()
+    memory_queue.start()
+    async with AsyncSessionLocal() as session:
+        await requeue_unfinished(session, memory_queue.enqueue)
     yield
+    await memory_queue.stop()
 
 
 app = FastAPI(

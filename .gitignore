@@ -54,3 +54,6 @@ temp/
 .pytest_cache/
 .coverage
 htmlcov/
+
+# yt-dlp session cookies (secrets)
+cookies/

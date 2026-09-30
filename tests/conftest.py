@@ -1,3 +1,4 @@
+import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -18,3 +19,11 @@ async def db_session():
         yield session
 
     await engine.dispose()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_instagram_session(tmp_path, monkeypatch):
+    """Tests never pace requests or read the real Instagram session."""
+    monkeypatch.setattr("src.config.settings.IG_MIN_INTERVAL_SEC", 0)
+    monkeypatch.setattr("src.config.settings.IG_SESSION_FILE", str(tmp_path / "ig_session.txt"))
+    monkeypatch.setattr("src.config.settings.YTDLP_COOKIES_FILE", "")

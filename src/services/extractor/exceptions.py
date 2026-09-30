@@ -20,6 +20,16 @@ class PrivateAccountError(ExtractorError):
         super().__init__("Аккаунт приватный или доступ ограничен настройками приватности автора.")
 
 
+class AuthRequiredError(ExtractorError):
+    """Raised when the platform refuses anonymous access (login wall / bot check)."""
+
+    def __init__(self):
+        super().__init__(
+            "Платформа заблокировала анонимную загрузку (требуется вход / проверка на бота). "
+            "Обновите сессию Instagram в блоке «Сессия Instagram» и повторите."
+        )
+
+
 class VideoNotFoundError(ExtractorError):
     """Raised when the video has been deleted or cannot be found (404)."""
 

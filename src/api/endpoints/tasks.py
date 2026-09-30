@@ -152,3 +152,52 @@ async def get_task_detail(
         )
 
     return TaskItemResponse.model_validate(task)
+
+
+@router.post("/{task_id}/retry", response_model=TaskItemResponse)
+async def retry_task(
+    task_id: str,
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """
+    Re-runs a FAILED task: resets it to PENDING, drops partial results
+    left from the previous attempt and enqueues it for the worker again.
+    """
+    stmt = select(Task).where(Task.id == task_id)
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+
+    if not task:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Задача '{task_id}' не найдена.",
+        )
+
+    if task.status != TaskStatus.FAILED.value:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Повторно запустить можно только задачу со статусом «Ошибка».",
+        )
+
+    canonical_url = normalize_video_url(task.original_url)
+    if not canonical_url:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Некорректная ссылка — повторная обработка невозможна.",
+        )
+
+    # Partial metrics may exist if the previous attempt failed after download;
+    # they must be removed first, since task_id is unique on child tables.
+    task.metrics = None
+    task.analysis = None
+    await db.flush()
+
+    task.canonical_url = canonical_url
+    task.status = TaskStatus.PENDING.value
+    task.error_message = None
+    await db.commit()
+    await db.refresh(task)
+
+    enqueue_reel_analysis(task.id)
+
+    return TaskItemResponse.model_validate(task)

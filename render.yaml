@@ -1,49 +1,29 @@
+# Render free tier: one web service, no Redis, no separate worker.
+# The web process works the task queue in memory (QUEUE_BACKEND=memory).
+# The free disk is ephemeral: the SQLite database resets on every restart/sleep.
 services:
   - type: web
     name: skycoach-reels-analyzer
-    env: docker
+    runtime: docker
     dockerfilePath: ./Dockerfile
-    plan: starter
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: PORT
         value: 8080
+      - key: QUEUE_BACKEND
+        value: memory
       - key: DATABASE_URL
         value: sqlite+aiosqlite:////app/data/skycoach.db
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: skycoach-redis
-          property: connectionString
       - key: AI_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
+        value: openai_compatible
+      - key: OPENAI_BASE_URL
+        value: https://openrouter.ai/api/v1
+      - key: OPENAI_MODEL
+        value: qwen/qwen3.8-omni-flash
+      # Set in the Render dashboard, never committed
+      - key: OPENAI_API_KEY
         sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-
-  - type: worker
-    name: skycoach-worker
-    env: docker
-    dockerfilePath: ./Dockerfile
-    dockerCommand: rq worker skycoach_reels --url $REDIS_URL
-    plan: starter
-    envVars:
-      - key: DATABASE_URL
-        value: sqlite+aiosqlite:////app/data/skycoach.db
-      - key: REDIS_URL
-        fromService:
-          type: redis
-          name: skycoach-redis
-          property: connectionString
-      - key: AI_PROVIDER
-        value: gemini
-      - key: GEMINI_API_KEY
-        sync: false
-      - key: OPENROUTER_API_KEY
-        sync: false
-
-  - type: redis
-    name: skycoach-redis
-    ipAllowList: []
-    plan: starter
+      # Upload cookies.txt as a Secret File in the dashboard
+      - key: YTDLP_COOKIES_FILE
+        value: /etc/secrets/cookies.txt

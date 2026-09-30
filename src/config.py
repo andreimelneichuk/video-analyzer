@@ -22,6 +22,13 @@ class Settings(BaseSettings):
         description="Redis connection URL for RQ background workers",
     )
 
+    # 'redis' = RQ worker in a separate process; 'memory' = in-process queue
+    # inside the web app, for single-container hosting without Redis
+    QUEUE_BACKEND: str = Field(
+        default="redis",
+        description="Task queue backend: 'redis' (RQ) or 'memory' (in-process)",
+    )
+
     # Universal OpenAI-Compatible Multimodal AI settings
     # Compatible with OpenRouter, Alibaba DashScope, SiliconFlow, vLLM, OpenAI, etc.
     AI_PROVIDER: str = Field(
@@ -62,6 +69,25 @@ class Settings(BaseSettings):
     def effective_model(self) -> str:
         """Returns the active model slug across generic and specific configs."""
         return self.OPENAI_MODEL or self.OPENROUTER_MODEL or "qwen/qwen3.8-omni-flash"
+
+    # Netscape-format cookies.txt passed to yt-dlp (Instagram/YouTube block anonymous access)
+    YTDLP_COOKIES_FILE: str = Field(
+        default="",
+        description="Path to cookies.txt for yt-dlp; ignored if the file does not exist",
+    )
+
+    # Instagram session saved from the UI; lives in the shared data volume
+    IG_SESSION_FILE: str = Field(
+        default="./data/ig_session.txt",
+        description="Where the UI stores the Instagram cookies jar (takes priority over YTDLP_COOKIES_FILE)",
+    )
+    # Pause between Instagram downloads so the session isn't flagged for bursts
+    IG_MIN_INTERVAL_SEC: float = Field(
+        default=15, description="Minimum pause between Instagram requests"
+    )
+    IG_JITTER_SEC: float = Field(
+        default=10, description="Random extra pause added on top of the minimum"
+    )
 
     # Timeouts and business limits
     TASK_TIMEOUT_SECONDS: int = Field(

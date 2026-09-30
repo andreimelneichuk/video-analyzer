@@ -164,3 +164,53 @@ async def test_export_csv(api_client: AsyncClient, db_session):
     assert "text/csv" in response.headers["content-type"]
     assert "export-1" in response.text
     assert "streamer" in response.text
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_task(api_client: AsyncClient, db_session):
+    """Verifies a FAILED task is reset to PENDING with partial results dropped."""
+    task = Task(
+        id="retry-1",
+        original_url="https://www.instagram.com/reel/DceO7gsR0w-/",
+        canonical_url="https://www.instagram.com/reel/DceO7gsR0w-/",
+        status=TaskStatus.FAILED.value,
+        error_message="Внутренняя ошибка сервиса: timeout",
+    )
+    task.metrics = ReelMetrics(task_id="retry-1", views=100)
+    db_session.add(task)
+    await db_session.commit()
+
+    res = await api_client.post("/api/tasks/retry-1/retry")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["status"] == "PENDING"
+    assert data["error_message"] is None
+    assert data["metrics"] is None
+    assert data["analysis"] is None
+
+
+@pytest.mark.asyncio
+async def test_retry_rejects_non_failed_and_invalid(api_client: AsyncClient, db_session):
+    """Verifies retry is refused for missing, non-FAILED and invalid-URL tasks."""
+    db_session.add_all(
+        [
+            Task(
+                id="retry-pending",
+                original_url="https://www.instagram.com/reel/p1/",
+                canonical_url="https://www.instagram.com/reel/p1/",
+                status=TaskStatus.PENDING.value,
+            ),
+            Task(
+                id="retry-invalid",
+                original_url="https://invalid-url-domain.com/not-a-reel",
+                canonical_url="https://invalid-url-domain.com/not-a-reel",
+                status=TaskStatus.FAILED.value,
+                error_message="Некорректная ссылка",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    assert (await api_client.post("/api/tasks/missing/retry")).status_code == 404
+    assert (await api_client.post("/api/tasks/retry-pending/retry")).status_code == 409
+    assert (await api_client.post("/api/tasks/retry-invalid/retry")).status_code == 422

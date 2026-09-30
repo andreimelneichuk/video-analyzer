@@ -30,6 +30,10 @@
       backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.08);
     }
+    /* Keep badge text on one line so it never overflows the pill */
+    .badge {
+      white-space: nowrap;
+    }
   </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
@@ -99,6 +103,53 @@
       </div>
     </div>
 
+    <!-- Instagram Session Card -->
+    <div id="igSessionCard" class="card glass-panel shadow-2xl rounded-2xl p-5 border border-slate-800">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <span id="igStatusDot" class="w-2.5 h-2.5 rounded-full bg-slate-500 shrink-0"></span>
+          <div class="min-w-0">
+            <h2 class="font-semibold text-white">Сессия Instagram</h2>
+            <p id="igStatusText" class="text-xs text-slate-400 truncate">Загрузка статуса…</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btnIgRetryFailed" type="button" class="btn btn-sm btn-outline border-rose-700 text-rose-300 hover:bg-rose-900 hover:text-white hidden"></button>
+          <button id="btnIgCheck" type="button" class="btn btn-sm btn-ghost text-slate-300 hover:text-white">
+            <span id="btnIgCheckSpinner" class="loading loading-spinner loading-xs hidden"></span>
+            Проверить
+          </button>
+          <button id="btnIgToggle" type="button" class="btn btn-sm btn-neutral text-slate-300 hover:text-white border-slate-700">Обновить сессию</button>
+        </div>
+      </div>
+
+      <div id="igForm" class="hidden mt-4 pt-4 border-t border-slate-800 space-y-3">
+        <p class="text-xs text-slate-400 leading-relaxed">
+          Войдите в Instagram в браузере (лучше отдельным аккаунтом, в окне инкогнито), затем либо выгрузите
+          <span class="font-mono text-slate-300">cookies.txt</span> расширением, либо скопируйте значение cookie
+          <span class="font-mono text-slate-300">sessionid</span>: DevTools → Application → Cookies → instagram.com.
+          После этого закройте окно, <strong class="text-slate-300">не нажимая «Выйти»</strong> — выход сразу отключает сессию.
+        </p>
+        <div class="grid md:grid-cols-2 gap-3">
+          <label class="form-control">
+            <span class="label-text text-xs text-slate-400 mb-1">Файл cookies.txt</span>
+            <input id="igCookiesFile" type="file" accept=".txt,text/plain" class="file-input file-input-sm file-input-bordered bg-slate-900/90 border-slate-700 w-full" />
+          </label>
+          <label class="form-control">
+            <span class="label-text text-xs text-slate-400 mb-1">или значение sessionid</span>
+            <input id="igSessionId" type="password" autocomplete="off" placeholder="1234567890%3AAbCd..." class="input input-sm input-bordered bg-slate-900/90 border-slate-700 font-mono w-full" />
+          </label>
+        </div>
+        <div class="flex items-center justify-between gap-3">
+          <p id="igFormError" class="text-xs text-rose-400"></p>
+          <button id="btnIgSave" type="button" class="btn btn-sm bg-orange-600 hover:bg-orange-500 border-none text-white">
+            <span id="btnIgSaveSpinner" class="loading loading-spinner loading-xs hidden"></span>
+            Проверить и сохранить
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Active Tasks Progress Bar (Hidden by default) -->
     <div id="progressAlert" class="alert alert-info bg-sky-950/80 border-sky-800 text-sky-200 hidden shadow-lg">
       <span class="loading loading-spinner loading-md text-sky-400"></span>
@@ -124,7 +175,7 @@
               <th class="py-3 px-4">Ролик & Автор</th>
               <th>Метрики</th>
               <th>Класс</th>
-              <th>Заметность</th>
+              <th>Баннер</th>
               <th>Штраф & Выплата</th>
               <th>Статус</th>
               <th class="text-right">Детали</th>
@@ -291,6 +342,8 @@
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
+        // A batch may have just killed the session — refresh its badge
+        loadIgStatus();
       }
       progressAlert.classList.add('hidden');
     }
@@ -341,6 +394,7 @@
 
     // Render table
     function renderTasks() {
+      if (typeof updateIgRetryButton === 'function') updateIgRetryButton();
       const tasks = Array.from(taskCache.values()).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
       if (tasks.length === 0) {
@@ -367,7 +421,9 @@
         const comments = fmtMetric(task.metrics?.comments);
 
         // 3. Class Badge
-        let classBadge = '<span class="badge badge-sm badge-ghost text-slate-500">Ожидание</span>';
+        let classBadge = task.status === 'FAILED'
+          ? '<span class="text-slate-500 text-xs">—</span>'
+          : '<span class="badge badge-sm badge-ghost text-slate-500">Ожидание</span>';
         if (task.analysis) {
           const c = task.analysis.integration_class;
           if (c === 0) classBadge = '<span class="badge badge-sm bg-slate-700 text-slate-300 border-none font-medium">0: Нет рекламы</span>';
@@ -375,18 +431,16 @@
           else if (c === 2) classBadge = '<span class="badge badge-sm bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-medium">2: Продукт Skycoach</span>';
         }
 
-        // 4. Prominence score
+        // 4. Banner placement (prominence score lives in the modal)
         let prominenceHtml = '<span class="text-slate-500 text-xs">—</span>';
         if (task.analysis) {
-          const score = task.analysis.prominence_score;
-          const stars = '⭐'.repeat(score);
           const dur = task.analysis.banner_duration_seconds;
           const area = task.analysis.screen_percentage;
           const hasWrongLogo = task.analysis.has_correct_logo === false || (task.analysis.defects && task.analysis.defects.includes('wrong_logo'));
-          const logoWarning = hasWrongLogo ? '<span class="badge badge-xs bg-rose-950 text-rose-300 border-rose-800 ml-1">Чужое лого</span>' : '';
+          const logoWarning = hasWrongLogo ? '<span class="badge badge-xs bg-rose-950 text-rose-300 border-rose-800">Чужое лого</span>' : '';
           prominenceHtml = `
-            <div class="font-medium text-amber-400 text-xs flex items-center gap-1">${stars} <span class="text-slate-300">(${score}/5)</span> ${logoWarning}</div>
-            <div class="text-[11px] text-slate-400 font-mono mt-0.5">${dur.toFixed(1)}с · ${area.toFixed(1)}% кадра</div>
+            <div class="text-xs text-slate-300 font-mono whitespace-nowrap">${dur.toFixed(1)}с · ${area.toFixed(1)}% кадра</div>
+            ${logoWarning ? `<div class="mt-0.5">${logoWarning}</div>` : ''}
           `;
         }
 
@@ -406,8 +460,8 @@
         // 6. Status badge
         let statusBadge = '';
         if (task.status === 'PENDING') statusBadge = '<span class="badge badge-sm badge-neutral animate-pulse text-slate-400">В очереди</span>';
-        else if (task.status === 'DOWNLOADING') statusBadge = '<span class="badge badge-sm bg-sky-900/60 text-sky-300 border-sky-700 flex items-center gap-1"><span class="loading loading-spinner loading-xs"></span> Скачивание</span>';
-        else if (task.status === 'ANALYZING') statusBadge = '<span class="badge badge-sm bg-purple-900/60 text-purple-300 border-purple-700 flex items-center gap-1"><span class="loading loading-spinner loading-xs"></span> AI Анализ</span>';
+        else if (task.status === 'DOWNLOADING') statusBadge = '<span class="badge badge-sm bg-sky-900/60 text-sky-300 border-sky-700 gap-1"><span class="loading loading-spinner loading-xs"></span> Скачивание</span>';
+        else if (task.status === 'ANALYZING') statusBadge = '<span class="badge badge-sm bg-purple-900/60 text-purple-300 border-purple-700 gap-1"><span class="loading loading-spinner loading-xs"></span> AI Анализ</span>';
         else if (task.status === 'COMPLETED') statusBadge = task.is_cached ? '<span class="badge badge-sm bg-emerald-950 text-emerald-400 border-emerald-700">Кэш</span>' : '<span class="badge badge-sm bg-emerald-900/60 text-emerald-300 border-emerald-700">Готово</span>';
         else if (task.status === 'FAILED') statusBadge = '<span class="badge badge-sm bg-rose-950 text-rose-400 border-rose-700" title="' + (task.error_message || '') + '">Ошибка</span>';
 
@@ -431,7 +485,10 @@
           <td>${prominenceHtml}</td>
           <td>${payoutHtml}</td>
           <td>${statusBadge}</td>
-          <td class="text-right">
+          <td class="text-right whitespace-nowrap">
+            ${task.status === 'FAILED' ? `<button class="btn btn-xs btn-outline border-rose-700 text-rose-300 hover:bg-rose-900 hover:text-white mr-1" onclick="retryTask('${task.id}', this)">
+              ↻ Повторить
+            </button>` : ''}
             <button class="btn btn-xs btn-outline btn-neutral text-slate-300 hover:text-white" onclick="openTaskModal('${task.id}')">
               Инфо
             </button>
@@ -440,6 +497,30 @@
 
         resultsTableBody.appendChild(tr);
       });
+    }
+
+    // Re-run a failed task
+    window.retryTask = async function(taskId, btn) {
+      if (btn) btn.disabled = true;
+      try {
+        const res = await fetch(`/api/tasks/${taskId}/retry`, { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert('Ошибка: ' + (err.detail || 'Не удалось перезапустить задачу'));
+          return;
+        }
+        const task = await res.json();
+        taskCache.set(task.id, task);
+        activePollingIds.add(task.id);
+        if (detailModal.open) detailModal.close();
+        renderTasks();
+        startPolling();
+      } catch (e) {
+        console.error(e);
+        alert('Сетевая ошибка при перезапуске задачи.');
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     // Modal popup
@@ -498,6 +579,11 @@
           <div class="alert alert-error bg-rose-950/70 border-rose-800 text-rose-200 text-xs">
             <strong>Причина ошибки:</strong> ${task.error_message || 'Не удалось обработать ролик'}
           </div>
+          <div class="flex justify-end">
+            <button class="btn btn-sm btn-outline border-rose-700 text-rose-300 hover:bg-rose-900 hover:text-white" onclick="retryTask('${task.id}', this)">
+              ↻ Запустить заново
+            </button>
+          </div>
         `;
       } else {
         analysisHtml = `
@@ -519,8 +605,128 @@
       detailModal.showModal();
     }
 
+    // ---- Instagram session ----
+    const igStatusDot = document.getElementById('igStatusDot');
+    const igStatusText = document.getElementById('igStatusText');
+    const igForm = document.getElementById('igForm');
+    const igCookiesFile = document.getElementById('igCookiesFile');
+    const igSessionId = document.getElementById('igSessionId');
+    const igFormError = document.getElementById('igFormError');
+    const btnIgSave = document.getElementById('btnIgSave');
+    const btnIgCheck = document.getElementById('btnIgCheck');
+    const btnIgRetryFailed = document.getElementById('btnIgRetryFailed');
+
+    // Both the current and the legacy wording of AuthRequiredError
+    const isSessionFailure = (t) => t.status === 'FAILED' && (t.error_message || '').includes('анонимную загрузку');
+
+    function fmtDate(iso) {
+      return iso ? new Date(iso).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+    }
+
+    function renderIgStatus(st) {
+      let dot = 'bg-slate-500', text = st.message;
+      if (st.valid === true) {
+        dot = 'bg-emerald-400';
+        text = `Активна${st.username ? ' · @' + st.username : ''} · проверена ${fmtDate(st.checked_at)}`;
+        if (st.expires_at) text += ` · cookie до ${fmtDate(st.expires_at)}`;
+      } else if (st.valid === false) {
+        dot = 'bg-rose-500';
+        text = `Не работает: ${st.message} (${fmtDate(st.checked_at)})`;
+      } else if (st.configured) {
+        dot = 'bg-amber-400';
+      }
+      igStatusDot.className = `w-2.5 h-2.5 rounded-full shrink-0 ${dot}`;
+      igStatusText.textContent = text;
+      igStatusText.title = text;
+      if (st.valid === false || !st.configured) igForm.classList.remove('hidden');
+      updateIgRetryButton();
+    }
+
+    function updateIgRetryButton() {
+      const n = Array.from(taskCache.values()).filter(isSessionFailure).length;
+      btnIgRetryFailed.textContent = `↻ Перезапустить упавшие из-за сессии (${n})`;
+      btnIgRetryFailed.classList.toggle('hidden', n === 0);
+    }
+
+    async function loadIgStatus() {
+      try {
+        const res = await fetch('/api/instagram/session');
+        if (res.ok) renderIgStatus(await res.json());
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    document.getElementById('btnIgToggle').addEventListener('click', () => igForm.classList.toggle('hidden'));
+
+    btnIgCheck.addEventListener('click', async () => {
+      btnIgCheck.disabled = true;
+      document.getElementById('btnIgCheckSpinner').classList.remove('hidden');
+      try {
+        const res = await fetch('/api/instagram/session/check', { method: 'POST' });
+        if (res.ok) renderIgStatus(await res.json());
+      } finally {
+        btnIgCheck.disabled = false;
+        document.getElementById('btnIgCheckSpinner').classList.add('hidden');
+      }
+    });
+
+    btnIgSave.addEventListener('click', async () => {
+      igFormError.textContent = '';
+      const body = {};
+      if (igCookiesFile.files.length) body.cookies_txt = await igCookiesFile.files[0].text();
+      else if (igSessionId.value.trim()) body.sessionid = igSessionId.value.trim();
+      else {
+        igFormError.textContent = 'Выберите файл или вставьте sessionid.';
+        return;
+      }
+
+      btnIgSave.disabled = true;
+      document.getElementById('btnIgSaveSpinner').classList.remove('hidden');
+      try {
+        const res = await fetch('/api/instagram/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          igFormError.textContent = data.detail || 'Не удалось сохранить сессию.';
+          return;
+        }
+        igCookiesFile.value = '';
+        igSessionId.value = '';
+        igForm.classList.add('hidden');
+        renderIgStatus(data);
+      } catch (e) {
+        console.error(e);
+        igFormError.textContent = 'Сетевая ошибка при сохранении.';
+      } finally {
+        btnIgSave.disabled = false;
+        document.getElementById('btnIgSaveSpinner').classList.add('hidden');
+      }
+    });
+
+    btnIgRetryFailed.addEventListener('click', async () => {
+      btnIgRetryFailed.disabled = true;
+      try {
+        for (const t of Array.from(taskCache.values()).filter(isSessionFailure)) {
+          const res = await fetch(`/api/tasks/${t.id}/retry`, { method: 'POST' });
+          if (!res.ok) continue;
+          const task = await res.json();
+          taskCache.set(task.id, task);
+          activePollingIds.add(task.id);
+        }
+        renderTasks();
+        startPolling();
+      } finally {
+        btnIgRetryFailed.disabled = false;
+      }
+    });
+
     // Initial load
     loadRecentTasks();
+    loadIgStatus();
   </script>
 </body>
 </html>

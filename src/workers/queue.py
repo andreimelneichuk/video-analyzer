@@ -4,6 +4,7 @@ import redis
 from rq import Queue
 
 from src.config import settings
+from src.workers.memory_queue import InProcessQueue
 
 logger = logging.getLogger(__name__)
 
@@ -11,6 +12,7 @@ QUEUE_NAME = "skycoach_reels"
 
 _redis_conn: redis.Redis | None = None
 _task_queue: Queue | None = None
+_memory_queue: "InProcessQueue | None" = None
 
 
 def get_redis_connection() -> redis.Redis:
@@ -34,12 +36,29 @@ def get_task_queue() -> Queue:
     return _task_queue
 
 
+def uses_memory_queue() -> bool:
+    return settings.QUEUE_BACKEND == "memory"
+
+
+def get_memory_queue() -> InProcessQueue:
+    """Returns the in-process queue; created and started by the app lifespan."""
+    global _memory_queue
+    if _memory_queue is None:
+        from src.workers.tasks import process_reel_task
+
+        _memory_queue = InProcessQueue(process_reel_task)
+    return _memory_queue
+
+
 def enqueue_reel_analysis(task_id: str) -> None:
     """
     Submits a task ID to the background Redis queue.
     If Redis is unavailable (e.g. in offline unit tests without Redis daemon),
     logs a warning.
     """
+    if uses_memory_queue():
+        get_memory_queue().enqueue(task_id)
+        return
     try:
         q = get_task_queue()
         q.enqueue(

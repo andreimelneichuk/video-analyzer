@@ -24,6 +24,7 @@ services:
       - HOST=0.0.0.0
       - DATABASE_URL=sqlite+aiosqlite:////app/data/skycoach.db
       - REDIS_URL=redis://redis:6379/0
+      - IG_SESSION_FILE=/app/data/ig_session.txt
       - AI_PROVIDER=${AI_PROVIDER:-openai_compatible}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
@@ -31,8 +32,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen3.8-omni-flash}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - YTDLP_COOKIES_FILE=/app/cookies/cookies.txt
     volumes:
       - app_data:/app/data
+      - ./cookies:/app/cookies:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -45,6 +48,9 @@ services:
     environment:
       - DATABASE_URL=sqlite+aiosqlite:////app/data/skycoach.db
       - REDIS_URL=redis://redis:6379/0
+      - IG_SESSION_FILE=/app/data/ig_session.txt
+      - IG_MIN_INTERVAL_SEC=${IG_MIN_INTERVAL_SEC:-15}
+      - IG_JITTER_SEC=${IG_JITTER_SEC:-10}
       - AI_PROVIDER=${AI_PROVIDER:-openai_compatible}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-${OPENROUTER_API_KEY:-}}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://openrouter.ai/api/v1}
@@ -52,8 +58,10 @@ services:
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - OPENROUTER_MODEL=${OPENROUTER_MODEL:-qwen/qwen3.8-omni-flash}
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - YTDLP_COOKIES_FILE=/app/cookies/cookies.txt
     volumes:
       - app_data:/app/data
+      - ./cookies:/app/cookies:ro
     depends_on:
       redis:
         condition: service_healthy

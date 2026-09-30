@@ -26,13 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+# Copy source code and documentation
+COPY . /app
+
 # Copy virtual environment from builder
 COPY --from=builder /app/.venv /app/.venv
 ENV PATH="/app/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
-
-# Copy source code and documentation
-COPY . /app
 
 # Ensure data and temp directories exist
 RUN mkdir -p /app/data /app/temp

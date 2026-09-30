@@ -11,7 +11,11 @@ from openai import AsyncOpenAI
 
 from src.config import settings
 from src.schemas.analysis import VlmRawObservation
-from src.services.ai.prompts import SKYCOACH_SYSTEM_PROMPT, SKYCOACH_USER_PROMPT
+from src.services.ai.prompts import (
+    BANNER_MEASURE_PROMPT,
+    SKYCOACH_SYSTEM_PROMPT,
+    SKYCOACH_USER_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +59,10 @@ class VlmClient:
 
         # 1. Primary: Any OpenAI-compatible multimodal endpoint
         if self.api_key and self.provider != "gemini":
-            return await self._analyze_with_openai_compatible(video_path, has_audio)
+            obs = await self._analyze_with_openai_compatible(video_path, has_audio)
+            if obs.has_skycoach_mention:
+                obs = await self._refine_with_banner_measurement(obs, video_path)
+            return obs
 
         # 2. Secondary: Google Gemini (if explicitly chosen)
         if settings.GEMINI_API_KEY and self.provider == "gemini":
@@ -70,16 +77,20 @@ class VlmClient:
     async def _analyze_with_openai_compatible(
         self, video_path: str, has_audio: bool
     ) -> VlmRawObservation:
+        # Close the HTTP client before the event loop ends: each queued task runs
+        # in its own asyncio.run(), and a leaked client errors on loop shutdown.
+        async with AsyncOpenAI(base_url=self.base_url, api_key=self.api_key) as client:
+            return await self._run_openai_analysis(client, video_path, has_audio)
+
+    async def _run_openai_analysis(
+        self, client: AsyncOpenAI, video_path: str, has_audio: bool
+    ) -> VlmRawObservation:
         """
         Universal OpenAI-compatible multimodal analysis.
         Attempts direct video stream; if the endpoint/tier requires frames or returns
         a video balance constraint (e.g. OpenRouter 402 for direct video), automatically
         extracts high-resolution keyframes via ffmpeg and sends them as vision image_url items.
         """
-        client = AsyncOpenAI(
-            base_url=self.base_url,
-            api_key=self.api_key,
-        )
 
         prompt_text = SKYCOACH_USER_PROMPT
         if not has_audio:
@@ -136,9 +147,7 @@ class VlmClient:
                 response_format={"type": "json_object"},
                 temperature=0.1,
             )
-            raw_json = response.choices[0].message.content
-            parsed = json.loads(raw_json)
-            return VlmRawObservation(**parsed)
+            return self._parse_observation(response.choices[0].message.content)
 
         except Exception as e:  # noqa: BLE001
             err_msg = str(e)
@@ -199,19 +208,34 @@ class VlmClient:
             self.base_url,
         )
 
-        response = await client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": SKYCOACH_SYSTEM_PROMPT},
-                {"role": "user", "content": user_content},
-            ],
-            response_format={"type": "json_object"},
-            temperature=0.1,
-        )
+        # The model occasionally answers with an empty object; one retry fixes it
+        last_error: Exception | None = None
+        for attempt in range(1, 3):
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SKYCOACH_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_content},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            raw_json = response.choices[0].message.content
+            logger.debug("Raw OpenAI-compatible response: %s", raw_json)
+            try:
+                return self._parse_observation(raw_json)
+            except ValueError as e:
+                last_error = e
+                logger.warning("Unusable VLM answer (attempt %d): %s", attempt, str(e)[:200])
+        raise RuntimeError(f"Модель вернула некорректный ответ: {str(last_error)[:100]}")
 
-        raw_json = response.choices[0].message.content
-        logger.debug("Raw OpenAI-compatible response: %s", raw_json)
-        parsed = json.loads(raw_json)
+    @staticmethod
+    def _parse_observation(raw_json: str | None) -> VlmRawObservation:
+        """
+        Parses a VLM answer into an observation. Raises ValueError (pydantic's
+        ValidationError included) when the answer is empty or malformed.
+        """
+        parsed = json.loads(raw_json or "{}")
 
         # Handle models returning a list of frame observations
         if isinstance(parsed, list):
@@ -238,6 +262,159 @@ class VlmClient:
                 parsed = parsed["result"]
 
         return VlmRawObservation(**parsed)
+
+    async def _refine_with_banner_measurement(
+        self, obs: VlmRawObservation, video_path: str
+    ) -> VlmRawObservation:
+        """
+        Second pass: the VLM's own area/duration guesses from a whole video are
+        noisy (a 2.4% banner came back as 4.5-6.5%), but it localizes a banner
+        on individual frames precisely. Ask for per-frame boxes and derive
+        area, on-screen duration and promo code from them.
+        """
+        try:
+            measurement = await self._measure_banner(video_path)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Banner measurement failed, keeping VLM estimates: %s", e)
+            return obs
+        if not measurement:
+            return obs
+
+        bbox, duration, promo_code = measurement
+        update = obs.model_dump()
+        update["banner_bbox"] = bbox
+        update["banner_duration_seconds"] = duration
+        if promo_code:
+            update["promo_code"] = promo_code
+        # Size is now measured, so the rule engine decides "too_small" by itself
+        update["observed_defects"] = [d for d in obs.observed_defects if d != "too_small"]
+        refined = VlmRawObservation(**update)
+        logger.info(
+            "Banner measured: bbox=%s area=%.2f%% duration=%.1fs promo=%s",
+            bbox,
+            refined.screen_percentage,
+            duration,
+            refined.promo_code,
+        )
+        return refined
+
+    async def _measure_banner(
+        self, video_path: str, num_frames: int = 12
+    ) -> tuple[list[float], float, str | None] | None:
+        """
+        Returns (largest banner bbox in 0-1000 coords, seconds on screen, promo code),
+        or None if no banner was found on any sampled frame.
+        """
+        duration = self._probe_duration(video_path)
+        if not duration:
+            return None
+        timestamps = [duration * (i + 0.5) / num_frames for i in range(num_frames)]
+        frames = self._extract_frames_at(video_path, timestamps)
+        if not frames:
+            return None
+
+        content: list[dict] = []
+        for idx, (ts, b64_img) in enumerate(zip(timestamps, frames, strict=True)):
+            content.append({"type": "text", "text": f"Кадр {idx} (t={ts:.1f}s):"})
+            content.append(
+                {
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{b64_img}", "detail": "high"},
+                }
+            )
+        content.append({"type": "text", "text": BANNER_MEASURE_PROMPT})
+
+        async with AsyncOpenAI(
+            base_url=self.base_url, api_key=self.api_key, max_retries=4
+        ) as client:
+            response = await client.chat.completions.create(
+                model=self.model,
+                messages=[{"role": "user", "content": content}],
+                response_format={"type": "json_object"},
+                temperature=0,
+            )
+        parsed = json.loads(response.choices[0].message.content or "{}")
+        # Some answers skip the wrapper and return the per-frame list directly
+        if isinstance(parsed, list):
+            parsed = {"frames": parsed}
+        if not isinstance(parsed, dict):
+            return None
+
+        boxes: list[list[float]] = []
+        for item in parsed.get("frames") or []:
+            bbox = item.get("bbox") if isinstance(item, dict) else None
+            if (
+                isinstance(bbox, list)
+                and len(bbox) == 4
+                and all(isinstance(v, (int, float)) for v in bbox)
+                and bbox[2] > bbox[0]
+                and bbox[3] > bbox[1]
+            ):
+                boxes.append([float(v) for v in bbox])
+        if not boxes:
+            return None
+
+        largest = max(boxes, key=lambda b: (b[2] - b[0]) * (b[3] - b[1]))
+        seconds_on_screen = round(len(boxes) * duration / num_frames, 1)
+        promo_code = parsed.get("promo_code") or None
+        return largest, seconds_on_screen, promo_code
+
+    @staticmethod
+    def _probe_duration(video_path: str) -> float | None:
+        try:
+            out = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-show_entries",
+                    "format=duration",
+                    "-of",
+                    "csv=p=0",
+                    video_path,
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            ).stdout
+            return float(out.strip())
+        except (OSError, subprocess.CalledProcessError, ValueError):
+            return None
+
+    @staticmethod
+    def _extract_frames_at(video_path: str, timestamps: list[float]) -> list[str]:
+        """Extracts one 720px-wide JPEG per timestamp and returns them base64-encoded."""
+        temp_dir = tempfile.mkdtemp(prefix="banner_frames_")
+        try:
+            b64_frames = []
+            for idx, ts in enumerate(timestamps):
+                out_path = os.path.join(temp_dir, f"frame_{idx:03d}.jpg")
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-ss",
+                    f"{ts:.2f}",
+                    "-i",
+                    video_path,
+                    "-frames:v",
+                    "1",
+                    "-vf",
+                    "scale=720:-2",
+                    "-q:v",
+                    "3",
+                    out_path,
+                ]
+                subprocess.run(
+                    cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True
+                )
+                with open(out_path, "rb") as f:
+                    b64_frames.append(base64.b64encode(f.read()).decode("utf-8"))
+            return b64_frames
+        except (OSError, subprocess.CalledProcessError) as e:
+            logger.warning("Could not extract frames for banner measurement: %s", e)
+            return []
+        finally:
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @classmethod
     def _get_reference_logo_b64(cls) -> str | None:

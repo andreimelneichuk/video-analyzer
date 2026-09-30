@@ -1,3 +1,6 @@
+import csv
+from pathlib import Path
+
 import pytest
 
 from src.models.enums import BannerDefect, IntegrationClass
@@ -151,6 +154,36 @@ def test_too_small_deduction():
     assert "Баннер слишком мелкий (-30%)" in result.payout_recommendation
 
 
+@pytest.mark.parametrize(
+    ("defects", "expected"),
+    [
+        # zdlghervyTA: cut off + too low -> one 20% deduction in the examples, not 40%
+        ([BannerDefect.CUT_OFF_EDGE, BannerDefect.OVERLAPPED_BY_UI], 20),
+        # DbpiVrpMa1j: small AND partly covered -> the heaviest single deduction applies
+        ([BannerDefect.TOO_SMALL, BannerDefect.OVERLAPPED_BY_UI], 30),
+    ],
+)
+def test_multiple_defects_apply_single_heaviest_deduction(defects, expected):
+    """The payout examples apply one deduction per video, never a sum."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        banner_duration_seconds=7.0,
+        screen_percentage=8.0,
+        has_voice_cta=False,
+        has_text_cta=True,
+        promo_code=None,
+        observed_defects=defects,
+        visual_observations="Несколько дефектов размещения.",
+    )
+    result = SkycoachRuleEngine.evaluate(obs)
+
+    assert result.deduction_percent == expected
+    assert result.payout_recommendation.startswith(f"{expected}% deduction")
+    # Every defect is still reported to the manager
+    assert len(result.defects) == len(defects)
+
+
 def test_banner_not_visible_excluded():
     """Verifies exclusion / 0 payout for invisible or covered banner."""
     obs = VlmRawObservation(
@@ -257,3 +290,147 @@ def test_has_correct_logo_false_auto_triggers_wrong_logo_defect():
     assert BannerDefect.WRONG_LOGO.value in result.defects
     assert result.deduction_percent == 30
     assert result.prominence_score == 1  # Base score 3 - 2 = 1
+
+
+def test_screen_percentage_derived_from_bbox():
+    """Banner area is computed from the bbox, overriding the VLM's own estimate."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        banner_duration_seconds=9.0,
+        screen_percentage=4.5,
+        banner_bbox=[217, 122, 756, 169],
+        has_voice_cta=False,
+        has_text_cta=True,
+        visual_observations="Small banner at the top",
+    )
+    assert obs.screen_percentage == pytest.approx(2.53, abs=0.01)
+
+    analysis = SkycoachRuleEngine.evaluate(obs)
+    assert "too_small" in analysis.defects
+    assert analysis.deduction_percent == 30
+
+
+def test_invalid_bbox_keeps_estimate():
+    """A degenerate bbox falls back to the VLM's screen_percentage."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        banner_duration_seconds=9.0,
+        screen_percentage=12.0,
+        banner_bbox=[500, 500, 400, 600],
+        has_voice_cta=False,
+        has_text_cta=True,
+        visual_observations="",
+    )
+    assert obs.screen_percentage == 12.0
+
+
+@pytest.mark.asyncio
+async def test_banner_measurement_overrides_vlm_estimates(monkeypatch):
+    """Measured bbox/duration/promo replace the VLM's guesses and drop its too_small call."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        banner_duration_seconds=5.0,
+        screen_percentage=12.0,
+        promo_code="MERC100",
+        observed_defects=[BannerDefect.TOO_SMALL],
+        has_voice_cta=False,
+        has_text_cta=True,
+        visual_observations="",
+    )
+
+    async def fake_measure(self, video_path, num_frames=12):
+        return [217.0, 122.0, 756.0, 169.0], 8.7, "MGBLOOD"
+
+    monkeypatch.setattr(VlmClient, "_measure_banner", fake_measure)
+    refined = await VlmClient()._refine_with_banner_measurement(obs, "video.mp4")
+
+    assert refined.screen_percentage == pytest.approx(2.53, abs=0.01)
+    assert refined.banner_duration_seconds == 8.7
+    assert refined.promo_code == "MGBLOOD"
+    assert BannerDefect.TOO_SMALL not in refined.observed_defects
+    assert SkycoachRuleEngine.evaluate(refined).deduction_percent == 30
+
+
+@pytest.mark.parametrize(
+    ("bbox", "expected"),
+    [
+        # Facebook example #20: flush to the top edge, under the app header -> excluded
+        ([0, 13, 998, 105], {BannerDefect.CUT_OFF_EDGE, BannerDefect.NOT_VISIBLE}),
+        # Paid-in-full Valorant banners, top and bottom placement
+        ([161, 83, 843, 194], set()),
+        ([163, 783, 837, 868], set()),
+        # Runs off the left edge -> logo clipped
+        ([0, 400, 600, 480], {BannerDefect.CUT_OFF_EDGE}),
+        # Partly under the header
+        ([200, 50, 800, 150], {BannerDefect.OVERLAPPED_BY_UI}),
+        # Dbghg_3RrsX: grazes the header by 2 of 107 px -> not a defect
+        ([163, 78, 838, 185], set()),
+        # Reaches into the Shorts/Reels like/comment/share column on the right
+        ([600, 600, 980, 700], {BannerDefect.OVERLAPPED_BY_UI}),
+        # AVC3rnBrU-g-like: right edge only touches the button column
+        ([161, 775, 875, 882], set()),
+    ],
+)
+def test_placement_defects_from_bbox(bbox, expected):
+    assert set(SkycoachRuleEngine._placement_defects(bbox)) == expected
+
+
+def test_parse_observation_rejects_empty_answer():
+    """An empty VLM answer raises instead of producing a half-filled observation."""
+    with pytest.raises(ValueError):
+        VlmClient._parse_observation("{}")
+
+
+def test_slightly_small_banner_gets_reduced_deduction():
+    """DbpiVrpMa1j: 5.5% of the frame is only slightly small -> 20%, not 30%."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        banner_duration_seconds=9.0,
+        screen_percentage=5.5,
+        has_voice_cta=False,
+        has_text_cta=True,
+        promo_code=None,
+        visual_observations="",
+    )
+    result = SkycoachRuleEngine.evaluate(obs)
+
+    assert result.deduction_percent == 20
+    assert BannerDefect.TOO_SMALL.value in result.defects
+
+
+LABELS_CSV = Path(__file__).resolve().parents[1] / "docs" / "banner_labels.csv"
+
+
+def _labeled_banners() -> list:
+    with LABELS_CSV.open(encoding="utf-8") as f:
+        rows = [r for r in csv.DictReader(f) if r["banner_bbox"] and r["label_deduction"]]
+    return [
+        pytest.param(
+            [float(v) for v in r["banner_bbox"].split()],
+            int(r["label_deduction"]),
+            id=r["url"].rstrip("/").rsplit("/", 1)[-1],
+        )
+        for r in rows
+    ]
+
+
+@pytest.mark.parametrize(("bbox", "expected"), _labeled_banners())
+def test_rules_match_manual_labels(bbox, expected):
+    """Measured banner boxes from real videos must yield the manually labeled deduction."""
+    obs = VlmRawObservation(
+        has_skycoach_mention=True,
+        is_product_advertised=True,
+        banner_duration_seconds=8.0,
+        screen_percentage=0.0,
+        banner_bbox=bbox,
+        has_voice_cta=False,
+        has_text_cta=True,
+        promo_code=None,
+        visual_observations="",
+    )
+
+    assert SkycoachRuleEngine.evaluate(obs).deduction_percent == expected
