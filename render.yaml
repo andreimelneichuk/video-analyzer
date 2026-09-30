@@ -1,6 +1,6 @@
 # Render free tier: one web service, no Redis, no separate worker.
 # The web process works the task queue in memory (QUEUE_BACKEND=memory).
-# The free disk is ephemeral: the SQLite database resets on every restart/sleep.
+# The free disk is ephemeral, so the database lives in external Postgres.
 services:
   - type: web
     name: skycoach-reels-analyzer
@@ -13,8 +13,10 @@ services:
         value: 8080
       - key: QUEUE_BACKEND
         value: memory
+      # External Postgres (e.g. Neon connection string) so tasks and the
+      # Instagram session survive restarts. Set in the dashboard.
       - key: DATABASE_URL
-        value: sqlite+aiosqlite:////app/data/skycoach.db
+        sync: false
       - key: AI_PROVIDER
         value: openai_compatible
       - key: OPENAI_BASE_URL

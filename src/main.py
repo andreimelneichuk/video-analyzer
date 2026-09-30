@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from src.api.router import api_router
 from src.config import settings
 from src.database import AsyncSessionLocal, init_db
+from src.services.extractor import ig_session_store
 from src.workers.memory_queue import requeue_unfinished
 from src.workers.queue import get_memory_queue, uses_memory_queue
 
@@ -24,6 +25,8 @@ async def lifespan(app: FastAPI):
     # Ensure local data directory exists for SQLite
     os.makedirs("./data", exist_ok=True)
     await init_db()
+    async with AsyncSessionLocal() as session:
+        await ig_session_store.restore(session)
 
     if not uses_memory_queue():
         yield

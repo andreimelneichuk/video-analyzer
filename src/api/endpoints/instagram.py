@@ -1,7 +1,12 @@
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
+import asyncio
+from typing import Annotated
 
-from src.services.extractor import ig_session
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from src.database import get_db
+from src.services.extractor import ig_session, ig_session_store
 
 router = APIRouter(prefix="/instagram", tags=["instagram"])
 
@@ -25,8 +30,8 @@ class SessionUpdateRequest(BaseModel):
     )
 
 
-# Endpoints are sync on purpose: session checks do blocking network I/O,
-# FastAPI runs them in its threadpool.
+# Session checks do blocking network I/O: sync endpoints run in FastAPI's
+# threadpool, the async one moves the check to a thread itself.
 
 
 @router.get("/session", response_model=SessionStatusResponse)
@@ -36,7 +41,7 @@ def get_session_status():
 
 
 @router.post("/session", response_model=SessionStatusResponse)
-def update_session(body: SessionUpdateRequest):
+async def update_session(body: SessionUpdateRequest, db: Annotated[AsyncSession, Depends(get_db)]):
     """
     Replaces the Instagram session. The new cookies are checked against Instagram
     first; a rejected session is never saved.
@@ -46,11 +51,13 @@ def update_session(body: SessionUpdateRequest):
     except ig_session.InvalidCookiesError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e)) from e
 
-    result = ig_session.save_session(cookies_text)
+    result = await asyncio.to_thread(ig_session.save_session, cookies_text)
     if not result["saved"]:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result["error"]
         )
+    # Mirror into the database so the session survives an ephemeral disk
+    await ig_session_store.persist(db)
     return result
 
 

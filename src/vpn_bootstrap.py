@@ -101,7 +101,9 @@ def build_singbox_config(outbound: dict, port: int = SOCKS_PORT) -> dict:
     return {
         # Hosting port scanners probe the SOCKS port every second; keep the log quiet
         "log": {"level": "fatal"},
-        "inbounds": [{"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": port}],
+        "inbounds": [
+            {"type": "socks", "tag": "socks-in", "listen": "127.0.0.1", "listen_port": port}
+        ],
         "outbounds": [outbound],
     }
 
