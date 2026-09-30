@@ -9,7 +9,7 @@ import certifi
 import yt_dlp
 from yt_dlp.networking import Request
 
-from src.config import settings  # noqa: F401  (patched in tests)
+from src.config import settings
 from src.services.extractor import ig_session
 from src.services.extractor.exceptions import (
     AuthRequiredError,
@@ -67,6 +67,10 @@ class YtDlpExtractor:
             cookies_copy = os.path.join(cookies_dir, "cookies.txt")
             shutil.copyfile(cookies_file, cookies_copy)
             opts["cookiefile"] = cookies_copy
+        # Datacenter IPs get YouTube's bot check; an optional proxy works around it.
+        # Anonymous traffic only, so even an untrusted free proxy sees no cookies.
+        if settings.YOUTUBE_PROXY and ("youtube.com" in url or "youtu.be" in url):
+            opts["proxy"] = settings.YOUTUBE_PROXY
         if target_dir:
             opts["outtmpl"] = os.path.join(target_dir, "%(id)s.%(ext)s")
         return opts
@@ -147,7 +151,7 @@ class YtDlpExtractor:
                     ig_session.mark_invalid(
                         "Instagram отклонил загрузку — сессия истекла или заблокирована."
                     )
-                raise AuthRequiredError() from e
+                raise AuthRequiredError(instagram=is_instagram) from e
             elif any(
                 k in err_msg for k in ["private", "login", "requires authentication", "restricted"]
             ):

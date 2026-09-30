@@ -23,11 +23,18 @@ class PrivateAccountError(ExtractorError):
 class AuthRequiredError(ExtractorError):
     """Raised when the platform refuses anonymous access (login wall / bot check)."""
 
-    def __init__(self):
-        super().__init__(
-            "Платформа заблокировала анонимную загрузку (требуется вход / проверка на бота). "
-            "Обновите сессию Instagram в блоке «Сессия Instagram» и повторите."
-        )
+    def __init__(self, instagram: bool = True):
+        if instagram:
+            message = (
+                "Платформа заблокировала анонимную загрузку (требуется вход / проверка на бота). "
+                "Обновите сессию Instagram в блоке «Сессия Instagram» и повторите."
+            )
+        else:
+            message = (
+                "Платформа требует подтвердить, что это не бот: загрузка с IP сервера "
+                "заблокирована. Задайте YOUTUBE_PROXY или проверьте ролик локально."
+            )
+        super().__init__(message)
 
 
 class VideoNotFoundError(ExtractorError):

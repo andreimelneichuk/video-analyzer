@@ -303,3 +303,30 @@ def test_known_invalid_session_fails_fast(mock_ydl_cls, tmp_path, monkeypatch):
     with pytest.raises(AuthRequiredError):
         YtDlpExtractor().extract_info_and_download("https://www.instagram.com/reel/x/")
     mock_ydl_cls.assert_not_called()
+
+
+def test_youtube_proxy_applies_only_to_youtube(monkeypatch):
+    """A free proxy may see YouTube traffic only: no cookies, never Instagram."""
+    monkeypatch.setattr(
+        "src.services.extractor.ytdlp_extractor.settings.YOUTUBE_PROXY", "http://1.2.3.4:8080"
+    )
+    extractor = YtDlpExtractor()
+
+    yt_opts = extractor._get_ydl_options(url="https://www.youtube.com/shorts/x")
+    assert yt_opts["proxy"] == "http://1.2.3.4:8080"
+    assert "cookiefile" not in yt_opts
+    assert "proxy" not in extractor._get_ydl_options(url="https://www.instagram.com/reel/x/")
+    assert "proxy" not in extractor._get_ydl_options(url="https://vm.tiktok.com/x/")
+
+
+def test_youtube_proxy_disabled_by_default():
+    assert "proxy" not in YtDlpExtractor()._get_ydl_options(url="https://youtube.com/shorts/x")
+
+
+def test_auth_error_message_names_the_platform():
+    from src.services.extractor.exceptions import AuthRequiredError
+
+    assert "Instagram" in str(AuthRequiredError(instagram=True))
+    youtube_message = str(AuthRequiredError(instagram=False))
+    assert "Instagram" not in youtube_message
+    assert "YOUTUBE_PROXY" in youtube_message

@@ -29,6 +29,13 @@ class Settings(BaseSettings):
         description="Task queue backend: 'redis' (RQ) or 'memory' (in-process)",
     )
 
+    # Optional proxy for anonymous YouTube downloads (servers get YouTube's bot check).
+    # Never used for Instagram or with cookies.
+    YOUTUBE_PROXY: str = Field(
+        default="",
+        description="Proxy URL for YouTube only, e.g. http://host:port or socks5://host:port",
+    )
+
     # Universal OpenAI-Compatible Multimodal AI settings
     # Compatible with OpenRouter, Alibaba DashScope, SiliconFlow, vLLM, OpenAI, etc.
     AI_PROVIDER: str = Field(

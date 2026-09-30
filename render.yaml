@@ -27,3 +27,7 @@ services:
       # Upload cookies.txt as a Secret File in the dashboard
       - key: YTDLP_COOKIES_FILE
         value: /etc/secrets/cookies.txt
+      # Optional: proxy for anonymous YouTube downloads only (Render IPs get
+      # YouTube's bot check). Set in the dashboard, e.g. http://host:port
+      - key: YOUTUBE_PROXY
+        sync: false
