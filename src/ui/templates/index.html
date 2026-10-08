@@ -90,7 +90,7 @@
       <div class="flex flex-wrap items-center justify-between gap-3 mt-4">
         <div class="flex items-center gap-2">
           <button id="btnLoadExamples" type="button" class="btn btn-sm btn-neutral text-slate-300 hover:text-white border-slate-700">
-            📋 Загрузить примеры из ТЗ
+            📋 Загрузить примеры
           </button>
           <button id="btnClear" type="button" class="btn btn-sm btn-ghost text-slate-400 hover:text-white">
             🧹 Очистить
@@ -236,7 +236,7 @@
     let pollingInterval = null;
     let taskCache = new Map();
 
-    // Sample URLs from banner_review_examples.pdf and test task edge cases
+    // Sample URLs: labeled banners and edge cases
     const SAMPLE_URLS = [
       "https://www.instagram.com/reel/DceO7gsR0w-/", // Good: Full payout (Valorant Funzone)
       "https://www.instagram.com/reel/Dcdl9dgSEHd/", // Cut off left side (-20%)
@@ -577,7 +577,7 @@
             </div>
 
             <div class="pt-2 border-t border-slate-800">
-              <span class="text-xs text-slate-400 block mb-1">Дефекты по регламенту Skycoach:</span>
+              <span class="text-xs text-slate-400 block mb-1">Дефекты размещения:</span>
               <div class="flex flex-wrap gap-1">${defectsList}</div>
             </div>
 

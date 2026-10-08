@@ -2,10 +2,10 @@ from src.models.analysis import IntegrationAnalysis
 from src.models.enums import BannerDefect, IntegrationClass
 from src.schemas.analysis import VlmRawObservation
 
-# Calibrated on banner_review_examples.pdf: "too small" banners measured 2.4-4.6%
-# of the frame, fully paid ones 5.4% and up.
+# Calibrated on manually labeled banners (docs/banner_labels.csv): "too small"
+# banners measured 2.4-4.6% of the frame, fully paid ones 5.4% and up.
 TOO_SMALL_AREA_PERCENT = 5.0
-# "Slightly small" band gets the reduced 20% from the PDF quick guide: DbpiVrpMa1j
+# "Slightly small" band gets the reduced 20% deduction: DbpiVrpMa1j
 # measured 5.5% and was docked 20%; the smallest fully paid banner is 5.8%.
 SLIGHTLY_SMALL_AREA_PERCENT = 5.7
 

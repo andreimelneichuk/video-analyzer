@@ -32,7 +32,7 @@ def test_normalize_instagram_urls():
 
 
 def test_normalize_youtube_and_tiktok_urls():
-    """Verifies YouTube Shorts and TikTok normalization from banner_review_examples."""
+    """Verifies YouTube Shorts and TikTok normalization."""
     yt_url = "https://youtube.com/shorts/L3wbACRc_v0?si=test123"
     assert normalize_video_url(yt_url) == "https://www.youtube.com/shorts/L3wbACRc_v0"
 
@@ -48,7 +48,7 @@ def test_normalize_youtube_and_tiktok_urls():
 
 
 def test_normalize_profile_scoped_instagram_and_facebook_urls():
-    """Link formats used in banner_review_examples.pdf."""
+    """Profile-scoped Instagram and Facebook link formats."""
     assert (
         normalize_video_url("https://www.instagram.com/valorant_funzone/reel/DceO7gsR0w-/")
         == "https://www.instagram.com/reel/DceO7gsR0w-/"

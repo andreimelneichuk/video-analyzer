@@ -39,7 +39,7 @@ def normalize_video_url(url: str) -> Optional[str]:
         shortcode = ig_match.group(1)
         return f"https://www.instagram.com/reel/{shortcode}/"
 
-    # Поддержка YouTube Shorts (из эталонного набора banner_review_examples)
+    # Поддержка YouTube Shorts
     yt_match = YOUTUBE_SHORTS_PATTERN.search(url)
     if yt_match:
         video_id = yt_match.group(1)
