@@ -3,7 +3,7 @@
 Сервис для инфлюенс-менеджеров Skycoach: по ссылке на ролик собирает метрики и определяет, есть ли в нём реклама Skycoach, насколько она заметна и корректно ли размещён баннер.
 
 - **Развёрнутый сервис:** https://videoalalizer.onrender.com
-- **Репозиторий:** https://github.com/andreimelneichuk/Videoalalizer
+- **Репозиторий:** https://github.com/andreimelneichuk/video-analyzer
 - **Swagger:** https://videoalalizer.onrender.com/docs
 
 ## Что делает
@@ -13,7 +13,7 @@
 1. **Метрики:** просмотры, лайки, комментарии, дата публикации, автор. Недоступная метрика показывается как `N/A`, а не как ноль.
 2. **Класс интеграции:** 0 — про Skycoach ничего нет; 1 — Skycoach упоминается, но продукт не рекламируется; 2 — рекламируется продукт.
 3. **Заметность 1–5 с обоснованием:** сколько секунд баннер в кадре, какую долю кадра занимает, был ли голосовой или текстовый призыв, какой промокод.
-4. **Дефекты размещения баннера и удержание из выплаты** по регламенту из `banner_review_examples.pdf`.
+4. **Дефекты размещения баннера и удержание из выплаты** по внутреннему регламенту выплат (правила — в таблице ниже).
 
 Результаты можно выгрузить в CSV (`/api/export/csv`).
 
@@ -48,8 +48,8 @@ flowchart TD
 ### Docker Compose (веб + воркер + Redis)
 
 ```bash
-git clone https://github.com/andreimelneichuk/Videoalalizer.git
-cd Videoalalizer
+git clone https://github.com/andreimelneichuk/video-analyzer.git
+cd video-analyzer
 cp .env.example .env   # впишите OPENAI_API_KEY (ключ OpenRouter)
 docker-compose up --build
 ```
